@@ -173,8 +173,8 @@ parse_objective_files() {
         found && /^## /          { exit }
         found                    { print }
     ' "$PROGRESS_FILE" \
-        | grep -oE '\*\*[^*]+\.lean\*\*' \
-        | sed 's/\*\*//g' \
+        | grep -oE '(\*\*|`)[^*`]+\.lean(\*\*|`)' \
+        | sed 's/\*\*//g; s/`//g' \
         | while IFS= read -r f; do
             local found
             found=$(find "${PROJECT_PATH}" -path "*/$f" -not -path '*/.lake/*' -not -path '*/lake-packages/*' 2>/dev/null | head -1)
@@ -201,7 +201,7 @@ run_claude() {
 
         cd "$PROJECT_PATH"
         claude -p "$prompt" \
-            --dangerously-skip-permissions --permission-mode bypassPermissions \
+            \
             --verbose --output-format stream-json \
             "$@" 2>>"$stderr_dest" | python3 -u -c "
 import sys, json, datetime
@@ -310,7 +310,7 @@ if RAW: RAW.close()
     else
         cd "$PROJECT_PATH"
         claude -p "$prompt" \
-            --dangerously-skip-permissions --permission-mode bypassPermissions \
+            \
             "$@"
     fi
 }
@@ -386,7 +386,7 @@ run_parallel_provers() {
 
     if [[ -z "$sorry_files" ]]; then
         warn "No files parsed from PROGRESS.md ## Current Objectives."
-        warn "The plan agent must list target files in **bold** (e.g. **Foo/Bar.lean**)."
+        warn "The plan agent must list target files in **bold** or \`backticks\` (e.g. **Foo/Bar.lean** or \`Foo/Bar.lean\`)."
         warn "Skipping this prover iteration."
         return 0
     fi
@@ -402,7 +402,7 @@ run_parallel_provers() {
         return 0
     fi
 
-    info "Found ${file_count} file(s) — launching parallel provers"
+    info "Found ${file_count} file(s) — launching parallel provers (background processes)"
 
     local prover_prompt_base
     prover_prompt_base=$(cat <<EOF
@@ -421,45 +421,7 @@ IMPORTANT:
 EOF
     )
 
-    local file_list=""
-    while IFS= read -r f; do
-        local rel
-        rel=$(relpath "$f" "$PROJECT_PATH")
-        file_list="${file_list}  - ${rel}"$'\n'
-    done <<< "$sorry_files"
-
-    local monitor_prompt
-    monitor_prompt=$(cat <<EOF
-You are the monitor agent for project '${PROJECT_NAME}'. Current stage: ${stage}.
-Project directory: ${PROJECT_PATH}
-Project state directory: ${STATE_DIR}
-You do NOT write proofs or edit .lean files. Your only job is to supervise ${file_count} prover teammates.
-
-Teammates and their assigned files:
-${file_list}
-Each teammate writes results to ${STATE_DIR}/task_results/<file>.md when done.
-
-task_results/ has been cleared before this round.
-
-YOUR RESPONSIBILITIES:
-1. Wait for ALL ${file_count} teammates to finish. Check ${STATE_DIR}/task_results/ periodically.
-2. Do NOT exit until all ${file_count} expected result files exist. Keep checking.
-3. If a teammate seems stuck, note it but keep waiting.
-4. Once all results are in, collect them:
-   - Read each task_results/<file>.md
-   - Update ${STATE_DIR}/task_pending.md with attempt results
-   - Migrate resolved theorems to ${STATE_DIR}/task_done.md
-   - Update ${STATE_DIR}/PROGRESS.md with a summary
-5. Before exiting, run the /cost command and include the output in your final message.
-6. Do NOT use TeamDelete.
-7. Do NOT edit any .lean files.
-EOF
-    )
-
     if [[ "$DRY_RUN" == true ]]; then
-        echo "=== Monitor ==="
-        echo "$monitor_prompt"
-        echo ""
         while IFS= read -r f; do
             local rel
             rel=$(relpath "$f" "$PROJECT_PATH")
@@ -468,23 +430,58 @@ EOF
         return 0
     fi
 
-    export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
-
-    local teammate_args=()
-    while IFS= read -r f; do
-        local rel
-        rel=$(relpath "$f" "$PROJECT_PATH")
-        teammate_args+=("--teammate-mode" "tmux" "-p" "${prover_prompt_base}"$'\n'"Your assigned file: ${rel}")
-    done <<< "$sorry_files"
-
-    info "Monitor supervising ${file_count} prover teammate(s)"
     info ""
     info "Watch progress:"
     info "  tail -f ${LOG_DIR}/archon-*.jsonl"
     info "  watch -n10 'ls -lt ${STATE_DIR}/task_results/'"
     info ""
 
-    run_claude "$monitor_prompt" "${teammate_args[@]}" || true
+    # Launch each prover as a separate background claude process
+    local pids=()
+    local prover_files=()
+    while IFS= read -r f; do
+        local rel
+        rel=$(relpath "$f" "$PROJECT_PATH")
+        local prover_prompt="${prover_prompt_base}"$'\n'"Your assigned file: ${rel}"
+        local prover_log="${LOG_BASE}-prover-$(echo "$rel" | sed 's|/|_|g; s|\.lean$||')"
+
+        info "  Starting prover for ${rel} (log: $(basename "${prover_log}").jsonl)"
+
+        # Run each prover in a subshell with its own LOG_BASE
+        (
+            LOG_BASE="$prover_log"
+            run_claude "$prover_prompt" || true
+        ) &
+        pids+=($!)
+        prover_files+=("$rel")
+    done <<< "$sorry_files"
+
+    info "Launched ${#pids[@]} prover process(es). Waiting for all to finish..."
+
+    # Wait for all provers and report results
+    local failed=0
+    for idx in "${!pids[@]}"; do
+        local pid="${pids[$idx]}"
+        local pfile="${prover_files[$idx]}"
+        if wait "$pid"; then
+            info "  Prover for ${pfile} finished (pid ${pid})"
+        else
+            warn "  Prover for ${pfile} exited with error (pid ${pid})"
+            (( failed++ )) || true
+        fi
+    done
+
+    if [[ "$failed" -gt 0 ]]; then
+        warn "${failed}/${#pids[@]} prover(s) had errors"
+    else
+        ok "All ${#pids[@]} prover(s) finished successfully"
+    fi
+
+    # Collect results: update task tracking files
+    local results_dir="${STATE_DIR}/task_results"
+    local result_count
+    result_count=$(ls "${results_dir}/"*.md 2>/dev/null | wc -l | tr -d ' ')
+    info "Found ${result_count}/${file_count} task result file(s) in task_results/"
 
     # Emit parallel round note
     if [[ -n "${LOG_BASE:-}" ]]; then
