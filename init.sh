@@ -183,7 +183,31 @@ fi
 mkdir -p "${PROJECT_PATH}/.claude/skills" "${PROJECT_PATH}/.claude/rules"
 
 # --- 4a: Register Archon as a local marketplace (idempotent) ---
-if ! claude plugin marketplace list 2>/dev/null | grep -q "archon-local"; then
+# Check if archon-local exists AND points to the correct path.
+# If the user has multiple Archon copies, the marketplace may point to an old one.
+MARKET_NEEDS_UPDATE=false
+if claude plugin marketplace list 2>/dev/null | grep -q "archon-local"; then
+    CURRENT_MARKET_PATH=$(python3 -c "
+import json
+try:
+    with open('$HOME/.claude/plugins/known_marketplaces.json') as f:
+        data = json.load(f)
+    print(data.get('archon-local', {}).get('source', {}).get('path', ''))
+except: pass
+" 2>/dev/null)
+    if [[ "$CURRENT_MARKET_PATH" != "${ARCHON_SKILLS_DIR}" ]]; then
+        warn "archon-local marketplace points to ${CURRENT_MARKET_PATH}"
+        info "Updating to current Archon: ${ARCHON_SKILLS_DIR}"
+        claude plugin marketplace remove archon-local 2>/dev/null || true
+        MARKET_NEEDS_UPDATE=true
+    else
+        ok "archon-local marketplace already registered"
+    fi
+else
+    MARKET_NEEDS_UPDATE=true
+fi
+
+if [[ "$MARKET_NEEDS_UPDATE" == true ]]; then
     MARKET_OUTPUT=$(claude plugin marketplace add "${ARCHON_SKILLS_DIR}" 2>&1) || true
     if echo "$MARKET_OUTPUT" | grep -qi "success\|already"; then
         ok "Registered archon-local marketplace"
@@ -192,11 +216,9 @@ if ! claude plugin marketplace list 2>/dev/null | grep -q "archon-local"; then
         err "Skills installation cannot proceed."
         exit 1
     fi
-else
-    ok "archon-local marketplace already registered"
 fi
 
-# --- 4b: Install lean4 plugin at project scope (skip if already installed) ---
+# --- 4b: Install lean4 plugin at project scope ---
 cd "$PROJECT_PATH"
 PLUGIN_VERSION=$(python3 -c "
 import json
@@ -205,8 +227,27 @@ with open('${ARCHON_SKILLS_DIR}/lean4/.claude-plugin/plugin.json') as f:
 " 2>/dev/null || echo "4.4.0")
 CACHE_DIR="$HOME/.claude/plugins/cache/archon-local/lean4/${PLUGIN_VERSION}"
 
-# Only install if not already present — re-install would overwrite our symlink
-if ! claude plugin list 2>/dev/null | grep -q "lean4@archon-local"; then
+# Check if the plugin is installed for THIS project (not just any project).
+# claude plugin list shows plugins from all projects, so we check the JSON directly.
+PLUGIN_INSTALLED_HERE=false
+if command -v python3 &>/dev/null && [[ -f "$HOME/.claude/plugins/installed_plugins.json" ]]; then
+    PLUGIN_INSTALLED_HERE=$(python3 -c "
+import json
+try:
+    with open('$HOME/.claude/plugins/installed_plugins.json') as f:
+        data = json.load(f)
+    for entry in data.get('plugins', {}).get('lean4@archon-local', []):
+        if entry.get('projectPath') == '${PROJECT_PATH}':
+            print('true')
+            break
+    else:
+        print('false')
+except:
+    print('false')
+" 2>/dev/null || echo "false")
+fi
+
+if [[ "$PLUGIN_INSTALLED_HERE" != "true" ]]; then
     INSTALL_OUTPUT=$(claude plugin install lean4@archon-local --scope project 2>&1) || true
     if echo "$INSTALL_OUTPUT" | grep -qi "success"; then
         ok "lean4@archon-local plugin installed (project scope)"
@@ -215,7 +256,7 @@ if ! claude plugin list 2>/dev/null | grep -q "lean4@archon-local"; then
         exit 1
     fi
 else
-    ok "lean4@archon-local plugin already installed"
+    ok "lean4@archon-local plugin already installed for this project"
 fi
 
 # --- 4c: Replace cache copy with symlink back to Archon source ---
