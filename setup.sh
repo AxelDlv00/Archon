@@ -60,7 +60,14 @@ fi
 ok "Python: $($PYTHON --version)"
 
 # -- pip --
-if ! $PYTHON -m pip --version &>/dev/null; then
+PIP_CMD=""
+if $PYTHON -m pip --version &>/dev/null; then
+    PIP_CMD="$PYTHON -m pip"
+elif command -v pip3 &>/dev/null; then
+    PIP_CMD="pip3"
+elif command -v pip &>/dev/null; then
+    PIP_CMD="pip"
+else
     warn "pip not found, installing..."
     $PYTHON -m ensurepip --upgrade 2>/dev/null || {
         err "Cannot install pip via ensurepip. Try:"
@@ -68,8 +75,9 @@ if ! $PYTHON -m pip --version &>/dev/null; then
         err "  macOS: python3 -m ensurepip --upgrade"
         exit 1
     }
+    PIP_CMD="$PYTHON -m pip"
 fi
-ok "pip: $($PYTHON -m pip --version 2>&1 | head -1)"
+ok "pip: $($PIP_CMD --version 2>&1 | head -1)"
 
 # -- curl --
 if ! command -v curl &>/dev/null; then
@@ -142,7 +150,7 @@ else
         export PATH="$HOME/.local/bin:$PATH"
     else
         warn "Standalone installer failed, trying pip..."
-        $PYTHON -m pip install --user uv 2>/dev/null || $PYTHON -m pip install uv
+        $PIP_CMD install --user uv 2>/dev/null || $PIP_CMD install uv
         export PATH="$HOME/.local/bin:$PATH"
     fi
     if command -v uv &>/dev/null; then
