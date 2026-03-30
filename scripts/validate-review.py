@@ -90,32 +90,55 @@ def validate(session_dir: str, attempts_path: str = None):
             elif ev.get('type') == 'goal_state':
                 goal_counts[ev.get('file', '')] += 1
 
+        # Helper: resolve raw file key to a canonical short name
+        def _canon(path: str) -> str:
+            """Use basename as canonical key (e.g. KrullDomain.lean)."""
+            return path.replace('\\', '/').rsplit('/', 1)[-1]
+
+        # Aggregate raw edit/goal counts by canonical file
+        raw_edits_by_file: dict[str, int] = Counter()
+        raw_goals_by_file: dict[str, int] = Counter()
+        for f, c in edit_counts.items():
+            raw_edits_by_file[_canon(f)] += c
+        for f, c in goal_counts.items():
+            raw_goals_by_file[_canon(f)] += c
+
+        # Aggregate milestone attempts by canonical file (skip blocked/not_started)
+        ms_attempts_by_file: dict[str, int] = Counter()
+        ms_goal_refs_by_file: dict[str, bool] = {}
         for m in milestones:
             if '_parse_error' in m:
                 continue
             target = m.get('target', {})
             if not isinstance(target, dict):
                 continue
-            tfile = target.get('file', '')
-
-            matching_edits = 0
-            matching_goals = 0
-            for f, c in edit_counts.items():
-                if f.endswith(tfile) or tfile.endswith(f.split('/')[-1]):
-                    matching_edits += c
-            for f, c in goal_counts.items():
-                if f.endswith(tfile) or tfile.endswith(f.split('/')[-1]):
-                    matching_goals += c
-
+            status = m.get('status', '')
+            if status in ('blocked', 'not_started'):
+                continue
+            tfile = _canon(target.get('file', ''))
             attempts = m.get('attempts', [])
-            if matching_edits >= 5 and len(attempts) <= 1:
+            ms_attempts_by_file[tfile] += len(attempts)
+            if any('goal' in str(a).lower() for a in attempts):
+                ms_goal_refs_by_file[tfile] = True
+            elif tfile not in ms_goal_refs_by_file:
+                ms_goal_refs_by_file[tfile] = False
+
+        # Cross-check per file
+        all_files = set(raw_edits_by_file) | set(raw_goals_by_file)
+        for tfile in sorted(all_files):
+            raw_e = raw_edits_by_file.get(tfile, 0)
+            raw_g = raw_goals_by_file.get(tfile, 0)
+            total_att = ms_attempts_by_file.get(tfile, 0)
+            has_goal_ref = ms_goal_refs_by_file.get(tfile, False)
+
+            if raw_e >= 5 and total_att <= 1:
                 warnings.append(
-                    f"WARN: {tfile} had {matching_edits} edits in raw log but only {len(attempts)} attempt(s) recorded"
+                    f"WARN: {tfile} had {raw_e} edits in raw log but only {total_att} attempt(s) recorded across all milestones"
                 )
 
-            if matching_goals >= 3 and not any('goal' in str(a).lower() for a in attempts):
+            if raw_g >= 3 and not has_goal_ref:
                 warnings.append(
-                    f"WARN: {tfile} had {matching_goals} goal checks in raw log but attempts don't reference goal states"
+                    f"WARN: {tfile} had {raw_g} goal checks in raw log but attempts don't reference goal states"
                 )
 
         summary_ev = next((ev for ev in raw if ev.get('type') == 'summary'), {})
