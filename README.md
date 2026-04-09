@@ -1,0 +1,1 @@
+To install the package : `python -m pip install .`

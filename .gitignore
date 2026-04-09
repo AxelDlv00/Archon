@@ -1,0 +1,6 @@
+.RepoToPromptignore
+output.txt
+build
+*.egg-info
+*__pycache__/
+*.pyc
