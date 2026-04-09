@@ -7,7 +7,7 @@
 To install the CLI tools and system dependencies, run the following command in your terminal:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/AxelDlv00/Archon/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/AxelDlv00/Archon/refs/heads/main/install.sh | bash
 ```
 
 > **Note**: A good practice is to run this in a Python environment. You need `python3` and `pip` installed on your system.
