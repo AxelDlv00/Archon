@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
+from importlib import resources
 from pathlib import Path
 
 import typer
@@ -43,13 +44,20 @@ def _shell_rc() -> Path | None:
     return None
 
 
+def _data_path(sub_path: str = "") -> Path:
+    """Resolve a path inside the bundled archon package."""
+    root = resources.files("archon")
+    if sub_path:
+        return Path(str(root.joinpath(sub_path)))
+    return Path(str(root))
+
+
 def _source_nvm() -> None:
     """Load nvm into the current process PATH if installed."""
     nvm_dir = Path.home() / ".nvm"
     nvm_sh = nvm_dir / "nvm.sh"
     if not nvm_sh.exists():
         return
-    # Ask nvm which node version is active, add its bin to PATH
     r = _run_shell(f'source "{nvm_sh}" && dirname "$(nvm which current)"')
     node_bin = r.stdout.strip()
     if node_bin and Path(node_bin).is_dir():
@@ -299,6 +307,82 @@ def _check_node() -> bool:
     return False
 
 
+def _install_dashboard_deps() -> bool:
+    """Install npm dependencies for the dashboard (server + client)."""
+    ui_dir = _data_path("ui")
+    if not ui_dir.exists():
+        log.warn("UI files not found in package data — skipping dashboard deps")
+        return False
+
+    server_dir = ui_dir / "server"
+    client_dir = ui_dir / "client"
+    ok = True
+
+    for directory, name in ((server_dir, "server"), (client_dir, "client")):
+        package_json = directory / "package.json"
+        if not package_json.exists():
+            log.warn(f"No package.json in {name} directory — skipping")
+            continue
+
+        node_modules = directory / "node_modules"
+        lock_marker = node_modules / ".package-lock.json"
+
+        needs_install = False
+        if not node_modules.exists():
+            needs_install = True
+        elif lock_marker.exists() and package_json.stat().st_mtime > lock_marker.stat().st_mtime:
+            needs_install = True
+
+        if not needs_install:
+            log.success(f"Dashboard {name} dependencies up to date")
+            continue
+
+        log.step(f"Installing dashboard {name} dependencies...")
+        r = _run(
+            ["npm", "install", "--no-fund", "--no-audit", "--loglevel=error"],
+            cwd=str(directory),
+        )
+        if r.returncode != 0:
+            log.error(f"Failed to install {name} dependencies: {r.stderr.strip()}")
+            ok = False
+        else:
+            log.success(f"Dashboard {name} dependencies installed")
+
+    # Build client if needed
+    client_dist = client_dir / "dist" / "index.html"
+    client_src = client_dir / "src"
+    needs_build = False
+
+    if not client_dist.exists():
+        needs_build = True
+    elif client_src.exists():
+        dist_mtime = client_dist.stat().st_mtime
+        for f in client_src.rglob("*"):
+            if f.is_file() and f.stat().st_mtime > dist_mtime:
+                needs_build = True
+                break
+
+    if needs_build and (client_dir / "node_modules").exists():
+        log.step("Building dashboard client...")
+        vite = client_dir / "node_modules" / "vite" / "bin" / "vite.js"
+        if vite.exists():
+            r = _run(
+                ["node", str(vite), "build", "--logLevel", "warn"],
+                cwd=str(client_dir),
+            )
+            if r.returncode != 0:
+                log.error(f"Client build failed: {r.stderr.strip()}")
+                ok = False
+            else:
+                log.success("Dashboard client built")
+        else:
+            log.warn("Vite not found in node_modules — skipping build")
+    elif not needs_build:
+        log.success("Dashboard client build up to date")
+
+    return ok
+
+
 def _check_api_keys() -> None:
     keys = {
         "OPENAI_API_KEY": "OpenAI",
@@ -326,7 +410,7 @@ def setup() -> None:
 
     Checks and auto-installs where possible: git, Python 3.10+, curl,
     elan/lean/lake, uv, tmux, ripgrep, Claude Code, Node.js (via nvm),
-    and external-model API keys (optional).
+    dashboard npm dependencies, and external-model API keys (optional).
     """
     fatal = False
 
@@ -347,7 +431,11 @@ def setup() -> None:
     _check_claude_code()
 
     log.rule("Dashboard dependencies")
-    _check_node()
+    node_ok = _check_node()
+    if node_ok:
+        _install_dashboard_deps()
+    else:
+        log.warn("Skipping dashboard npm install — Node.js not available")
 
     log.rule("Informal agent API keys (optional)")
     _check_api_keys()
