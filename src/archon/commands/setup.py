@@ -332,17 +332,61 @@ def _install_dashboard_deps() -> bool:
             needs_install = True
         elif lock_marker.exists() and package_json.stat().st_mtime > lock_marker.stat().st_mtime:
             needs_install = True
+        elif _has_wrong_platform_binaries(node_modules):
+            log.warn(f"Dashboard {name} has native modules for a different platform")
+            needs_install = True
 
         if not needs_install:
             log.success(f"Dashboard {name} dependencies up to date")
             continue
 
-        if not _npm_install(directory, name):
+        # Always clean install to avoid cross-platform binary issues
+        if not _npm_install(directory, name, clean=True):
             ok = False
 
     # Build client if needed
     ok = _build_dashboard_client(client_dir) and ok
     return ok
+
+
+def _has_wrong_platform_binaries(node_modules: Path) -> bool:
+    """Check if node_modules contains native binaries for a different platform."""
+    import platform as _platform
+
+    system = _platform.system().lower()   # 'linux', 'darwin', 'windows'
+    machine = _platform.machine().lower() # 'x86_64', 'arm64', 'aarch64'
+
+    # Normalize to esbuild/rollup naming conventions
+    if system == "linux":
+        expected_fragments = ["linux"]
+    elif system == "darwin":
+        expected_fragments = ["darwin"]
+    else:
+        expected_fragments = ["win32", "windows"]
+
+    if machine in ("x86_64", "amd64"):
+        expected_fragments.append("x64")
+    elif machine in ("arm64", "aarch64"):
+        expected_fragments.append("arm64")
+
+    # Check for known platform-specific packages
+    for pkg_prefix in ("@esbuild", "@rollup"):
+        pkg_dir = node_modules / pkg_prefix
+        if not pkg_dir.is_dir():
+            continue
+        subdirs = [d.name for d in pkg_dir.iterdir() if d.is_dir()]
+        if not subdirs:
+            continue
+        # If we find platform-specific dirs but none match current platform
+        has_any = len(subdirs) > 0
+        has_current = any(
+            all(frag in d for frag in expected_fragments)
+            for d in subdirs
+        )
+        if has_any and not has_current:
+            return True
+
+    return False
 
 
 def _npm_install(directory: Path, name: str, clean: bool = False) -> bool:
