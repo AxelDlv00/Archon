@@ -4,3 +4,6 @@ build
 *.egg-info
 *__pycache__/
 *.pyc
+src/archon/ui/client/node_modules/
+src/archon/ui/client/dist/
+src/archon/ui/server/node_modules/
