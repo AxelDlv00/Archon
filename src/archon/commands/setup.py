@@ -337,18 +337,41 @@ def _install_dashboard_deps() -> bool:
             log.success(f"Dashboard {name} dependencies up to date")
             continue
 
-        log.step(f"Installing dashboard {name} dependencies...")
-        r = _run(
-            ["npm", "install", "--no-fund", "--no-audit", "--loglevel=error"],
-            cwd=str(directory),
-        )
-        if r.returncode != 0:
-            log.error(f"Failed to install {name} dependencies: {r.stderr.strip()}")
+        if not _npm_install(directory, name):
             ok = False
-        else:
-            log.success(f"Dashboard {name} dependencies installed")
 
     # Build client if needed
+    ok = _build_dashboard_client(client_dir) and ok
+    return ok
+
+
+def _npm_install(directory: Path, name: str, clean: bool = False) -> bool:
+    """Run npm install in a directory, optionally cleaning first."""
+    if clean:
+        node_modules = directory / "node_modules"
+        package_lock = directory / "package-lock.json"
+        if node_modules.exists():
+            log.step(f"Removing {name} node_modules for clean install...")
+            import shutil as _shutil
+            _shutil.rmtree(node_modules, ignore_errors=True)
+        if package_lock.exists():
+            package_lock.unlink()
+
+    log.step(f"Installing dashboard {name} dependencies...")
+    r = _run(
+        ["npm", "install", "--no-fund", "--no-audit", "--loglevel=error"],
+        cwd=str(directory),
+    )
+    if r.returncode != 0:
+        log.error(f"Failed to install {name} dependencies: {r.stderr.strip()}")
+        return False
+
+    log.success(f"Dashboard {name} dependencies installed")
+    return True
+
+
+def _build_dashboard_client(client_dir: Path) -> bool:
+    """Build the dashboard client via vite, with auto-retry on rollup errors."""
     client_dist = client_dir / "dist" / "index.html"
     client_src = client_dir / "src"
     needs_build = False
@@ -362,25 +385,47 @@ def _install_dashboard_deps() -> bool:
                 needs_build = True
                 break
 
-    if needs_build and (client_dir / "node_modules").exists():
-        log.step("Building dashboard client...")
-        vite = client_dir / "node_modules" / "vite" / "bin" / "vite.js"
-        if vite.exists():
-            r = _run(
-                ["node", str(vite), "build", "--logLevel", "warn"],
-                cwd=str(client_dir),
-            )
-            if r.returncode != 0:
-                log.error(f"Client build failed: {r.stderr.strip()}")
-                ok = False
-            else:
-                log.success("Dashboard client built")
-        else:
-            log.warn("Vite not found in node_modules — skipping build")
-    elif not needs_build:
+    if not needs_build:
         log.success("Dashboard client build up to date")
+        return True
 
-    return ok
+    if not (client_dir / "node_modules").exists():
+        log.warn("Client node_modules missing — skipping build")
+        return False
+
+    vite = client_dir / "node_modules" / "vite" / "bin" / "vite.js"
+    if not vite.exists():
+        log.warn("Vite not found in node_modules — skipping build")
+        return False
+
+    log.step("Building dashboard client...")
+    r = _run(
+        ["node", str(vite), "build", "--logLevel", "warn"],
+        cwd=str(client_dir),
+    )
+
+    if r.returncode == 0:
+        log.success("Dashboard client built")
+        return True
+
+    # Check for the known rollup/npm optional dependency bug
+    stderr = r.stderr or ""
+    if "rollup" in stderr.lower() and ("cannot find module" in stderr.lower() or "npm has a bug" in stderr.lower()):
+        log.warn("Hit known rollup/npm optional dependency bug — retrying with clean install")
+        if not _npm_install(client_dir, "client", clean=True):
+            return False
+
+        log.step("Retrying client build...")
+        r = _run(
+            ["node", str(vite), "build", "--logLevel", "warn"],
+            cwd=str(client_dir),
+        )
+        if r.returncode == 0:
+            log.success("Dashboard client built (after clean reinstall)")
+            return True
+
+    log.error(f"Client build failed: {(r.stderr or '').strip()}")
+    return False
 
 
 def _check_api_keys() -> None:
