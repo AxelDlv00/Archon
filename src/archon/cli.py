@@ -31,7 +31,7 @@ class _BannerGroup(typer.core.TyperGroup):
             "  [bold cyan]1.[/bold cyan] archon setup       → install system dependencies\n"
             "  [bold cyan]2.[/bold cyan] cd project/dir     → navigate to your project directory\n"
             "  [bold cyan]3.[/bold cyan] archon init .      → create a project and initialize it with Lean 4\n"
-            "  [bold cyan]4.[/bold cyan] archon loop        → run autonomous formalization\n\n"
+            "  [bold cyan]4.[/bold cyan] archon loop        → run autonomous formalization\n"
             "  [bold cyan]5.[/bold cyan] archon dashboard . → visualize agent activity and project status\n\n"
             "[dim]Run [bold]archon <command> -h[/bold] for details on any command.[/dim]"
         )
@@ -78,18 +78,16 @@ def main(
 
 from archon.commands.init import init  # noqa: E402
 from archon.commands.loop import loop  # noqa: E402
-# from archon.commands.orchestrate import orchestrate  # noqa: E402
-# from archon.commands.review import review  # noqa: E402
 from archon.commands.doctor import doctor  # noqa: E402
 from archon.commands.dashboard import dashboard  # noqa: E402
 from archon.commands.setup import setup  # noqa: E402
+from archon.commands.prove import prove  # noqa: E402
 
 app.command()(init)
 app.command()(loop)
-# app.command()(orchestrate) # Not ready yet, it doesn't seem to go in the right direction, maybe needs to force openclaw. 
-# app.command()(review) # Not ready yet, it seems to work like review.sh but needs to understand why using this command. 
 app.command()(doctor)
 app.command()(dashboard)
+app.command()(prove)
 app.command()(setup)
 
 if __name__ == "__main__":

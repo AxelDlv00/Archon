@@ -335,6 +335,8 @@ def init(
     Creates .archon/ inside the target project with state files, copied
     prompts, skills, MCP server, and launches Claude for initial setup.
 
+    You can add context files (pdf, markdown, etc.) directly in the project directory, and Claude will be able to read them during the init session.
+
     [bold]Examples of use:[/bold]
       [cyan]archon init .[/cyan]                          Initialize the current directory.
       [cyan]archon init /path/to/lean-project[/cyan]      Initialize an existing external project.

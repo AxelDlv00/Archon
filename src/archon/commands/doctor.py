@@ -221,7 +221,7 @@ def _check_project_claude(project_path: Path) -> list[tuple[str, str, str]]:
         rows.append(("informal agent", "warning", "not found"))
 
     # MCP config
-    mcp_json = claude_dir / ".mcp.json"
+    mcp_json = project_path / ".mcp.json"
     if mcp_json.exists():
         data = _read_json(mcp_json)
         servers = list(data.get("mcpServers", {}).keys())

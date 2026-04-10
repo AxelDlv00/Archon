@@ -31,6 +31,7 @@ Once installed, use the `archon` command to interact with the tools.
 | `loop` | Start the automated formalization loop. |
 | `doctor` | Verify the full Archon setup and health. |
 | `dashboard` | Start the web monitoring interface. |
+| `prove` | Directly prove an inline statement. |
 | `setup` | Install required system dependencies. |
 
 *Run `archon --help` for details.*

@@ -57,6 +57,49 @@ def _file_slug(rel: str) -> str:
     return rel.replace("/", "_").replace(os.sep, "_").removesuffix(".lean")
 
 
+# ── snapshot helpers ──────────────────────────────────────────────────
+
+
+def _snapshot_baseline(file_path: Path, snap_dir: Path) -> None:
+    """Copy a .lean file as baseline.lean into the given snapshot directory."""
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copy2(file_path, snap_dir / "baseline.lean")
+    except OSError:
+        pass
+
+
+def _set_prover_env(
+    snap_dir: Path | str,
+    prover_jsonl: Path | str,
+    project_path: Path | str,
+    serial_mode: bool = False,
+) -> dict[str, str]:
+    """Set ARCHON_SNAPSHOT_DIR/PROVER_JSONL/PROJECT_PATH env vars and return the old values."""
+    old = {}
+    env_vars = {
+        "ARCHON_SNAPSHOT_DIR": str(snap_dir),
+        "ARCHON_PROVER_JSONL": str(prover_jsonl),
+        "ARCHON_PROJECT_PATH": str(project_path),
+    }
+    if serial_mode:
+        env_vars["ARCHON_SERIAL_MODE"] = "true"
+
+    for k, v in env_vars.items():
+        old[k] = os.environ.get(k)
+        os.environ[k] = v
+    return old
+
+
+def _unset_prover_env(old: dict[str, str]) -> None:
+    """Restore or unset ARCHON env vars from saved old values."""
+    for k, v in old.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+
+
 # ── preflight ─────────────────────────────────────────────────────────
 
 
@@ -117,9 +160,27 @@ def _run_single_prover(
     cwd: Path,
     log_base: Path,
     verbose_logs: bool,
+    snap_dir: Path | None = None,
+    project_path: Path | None = None,
 ) -> bool:
-    """Entry point for a single prover (may run in subprocess)."""
-    return run_claude(prompt, cwd=cwd, log_base=log_base, verbose_logs=verbose_logs)
+    """Entry point for a single prover (may run in subprocess).
+
+    Sets ARCHON env vars for the duration of the prover run.
+    """
+    if snap_dir is not None and project_path is not None:
+        old_env = _set_prover_env(
+            snap_dir=snap_dir,
+            prover_jsonl=Path(str(log_base) + ".jsonl"),
+            project_path=project_path,
+        )
+    else:
+        old_env = None
+
+    try:
+        return run_claude(prompt, cwd=cwd, log_base=log_base, verbose_logs=verbose_logs)
+    finally:
+        if old_env is not None:
+            _unset_prover_env(old_env)
 
 
 def _run_parallel_provers(
@@ -147,6 +208,13 @@ def _run_parallel_provers(
 
     file_count = len(sorry_files)
 
+    # Dry run check before anything else
+    if dry_run:
+        for f in sorry_files:
+            rel = _relpath(f, project_path)
+            log.step(f"[dry-run] Prover: {rel}")
+        return
+
     # Single file → run serial
     if file_count == 1:
         rel = _relpath(sorry_files[0], project_path)
@@ -156,20 +224,28 @@ def _run_parallel_provers(
         prover_log = iter_dir / "provers" / slug
         write_meta(iter_meta, **{f"provers.{slug}.file": rel, f"provers.{slug}.status": "running"})
 
-        prompt = build_prover_prompt(project_name, project_path, state_dir, stage)
-        ok = run_claude(prompt, cwd=project_path, log_base=prover_log, verbose_logs=verbose_logs)
+        # Snapshot baseline
+        snap_dir = iter_dir / "snapshots" / slug
+        _snapshot_baseline(sorry_files[0], snap_dir)
+
+        # Set env vars and run
+        old_env = _set_prover_env(
+            snap_dir=snap_dir,
+            prover_jsonl=Path(str(prover_log) + ".jsonl"),
+            project_path=project_path,
+        )
+        try:
+            prompt = build_prover_prompt(project_name, project_path, state_dir, stage)
+            ok = run_claude(prompt, cwd=project_path, log_base=prover_log, verbose_logs=verbose_logs)
+        finally:
+            _unset_prover_env(old_env)
+
         write_meta(iter_meta, **{f"provers.{slug}.status": "done" if ok else "error"})
         return
 
     log.info(f"Found {file_count} file(s) — launching parallel provers (max {max_parallel} concurrent)")
 
     base_prompt = build_parallel_prover_prompt(project_name, project_path, state_dir, stage)
-
-    if dry_run:
-        for f in sorry_files:
-            rel = _relpath(f, project_path)
-            log.step(f"[dry-run] Prover: {rel}")
-        return
 
     log.info(f"Watch progress:")
     log.step(f"tail -f {iter_dir}/provers/*.jsonl")
@@ -184,11 +260,21 @@ def _run_parallel_provers(
             prover_log = iter_dir / "provers" / slug
             prompt = f"{base_prompt}\nYour assigned file: {rel}"
 
+            # Snapshot baseline
+            snap_dir = iter_dir / "snapshots" / slug
+            _snapshot_baseline(f, snap_dir)
+
             log.step(f"Starting prover for {rel} (log: provers/{slug}.jsonl)")
             write_meta(iter_meta, **{f"provers.{slug}.file": rel, f"provers.{slug}.status": "running"})
 
             future = pool.submit(
-                _run_single_prover, prompt, project_path, prover_log, verbose_logs,
+                _run_single_prover,
+                prompt,
+                project_path,
+                prover_log,
+                verbose_logs,
+                snap_dir,
+                project_path,
             )
             futures[future] = (rel, slug)
 
@@ -429,7 +515,28 @@ def loop(
                 print(prover_prompt)
             else:
                 prover_log = iter_dir / "prover"
-                run_claude(prover_prompt, cwd=resolved, log_base=prover_log, verbose_logs=verbose_logs)
+
+                # Snapshot baseline for all target files in serial mode
+                sorry_files = parse_objective_files(progress_file, resolved)
+                if sorry_files:
+                    for sf in sorry_files:
+                        srel = _relpath(sf, resolved)
+                        sslug = _file_slug(srel)
+                        ssnap = iter_dir / "snapshots" / sslug
+                        _snapshot_baseline(sf, ssnap)
+
+                # Serial prover edits multiple files — set ARCHON_SNAPSHOT_DIR
+                # to the snapshots root; snapshot.py derives the subdir
+                old_env = _set_prover_env(
+                    snap_dir=iter_dir / "snapshots",
+                    prover_jsonl=Path(str(prover_log) + ".jsonl"),
+                    project_path=resolved,
+                    serial_mode=True,
+                )
+                try:
+                    run_claude(prover_prompt, cwd=resolved, log_base=prover_log, verbose_logs=verbose_logs)
+                finally:
+                    _unset_prover_env(old_env)
 
         prover_secs = int(time.monotonic() - prover_start)
         log.info(f"Prover phase finished. ({prover_secs}s)")
