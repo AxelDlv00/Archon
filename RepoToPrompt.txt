@@ -327,24 +327,14 @@ Once installed, use the `archon` command to interact with the tools.
 | `loop` | Start the automated formalization loop. |
 | `doctor` | Verify the full Archon setup and health. |
 | `dashboard` | Start the web monitoring interface. |
+| `prove` | Directly prove an inline statement. |
 | `setup` | Install required system dependencies. |
 
 *Run `archon --help` for details.*
 ----
-.RepoToPromptignore
-*.pyc
-src/archon/ui/client/node_modules/*
-src/archon/ui/server/node_modules/*
-src/archon/.archon-src/skills/lean4/*
-src/archon/.archon-src/tools/*
-src/archon/ui/client/dist/assets/*
-*package-lock.json
-.git/*
-src/archon.egg-info/*
-----
 .gitignore
 .RepoToPromptignore
-output.txt
+RepoToPrompt.txt
 build
 *.egg-info
 *__pycache__/
@@ -352,214 +342,7 @@ build
 src/archon/ui/client/node_modules/
 src/archon/ui/client/dist/
 src/archon/ui/server/node_modules/
-----
-RepoToPrompt.txt
-The following text is a repository with code...
-----
-LICENSE
-                                 Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright 2026 FrenzyMath
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-
-
+*.venv
 ----
 src/archon/runner.py
 """Claude Code runner with structured JSONL logging.
@@ -1081,7 +864,7 @@ class _BannerGroup(typer.core.TyperGroup):
             "  [bold cyan]1.[/bold cyan] archon setup       → install system dependencies\n"
             "  [bold cyan]2.[/bold cyan] cd project/dir     → navigate to your project directory\n"
             "  [bold cyan]3.[/bold cyan] archon init .      → create a project and initialize it with Lean 4\n"
-            "  [bold cyan]4.[/bold cyan] archon loop        → run autonomous formalization\n\n"
+            "  [bold cyan]4.[/bold cyan] archon loop        → run autonomous formalization\n"
             "  [bold cyan]5.[/bold cyan] archon dashboard . → visualize agent activity and project status\n\n"
             "[dim]Run [bold]archon <command> -h[/bold] for details on any command.[/dim]"
         )
@@ -1128,18 +911,16 @@ def main(
 
 from archon.commands.init import init  # noqa: E402
 from archon.commands.loop import loop  # noqa: E402
-# from archon.commands.orchestrate import orchestrate  # noqa: E402
-# from archon.commands.review import review  # noqa: E402
 from archon.commands.doctor import doctor  # noqa: E402
 from archon.commands.dashboard import dashboard  # noqa: E402
 from archon.commands.setup import setup  # noqa: E402
+from archon.commands.prove import prove  # noqa: E402
 
 app.command()(init)
 app.command()(loop)
-# app.command()(orchestrate) # Not ready yet, it doesn't seem to go in the right direction, maybe needs to force openclaw. 
-# app.command()(review) # Not ready yet, it seems to work like review.sh but needs to understand why using this command. 
 app.command()(doctor)
 app.command()(dashboard)
+app.command()(prove)
 app.command()(setup)
 
 if __name__ == "__main__":
@@ -1961,2486 +1742,6 @@ def next_session_num(state_dir: Path) -> int:
                 except ValueError:
                     pass
     return max_n + 1
-----
-src/archon/ui/package.json
-{
-  "name": "archon-ui",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Archon Dashboard UI - A web-based dashboard for monitoring Archon formalization projects",
-  "scripts": {
-    "dev": "cd server && npx tsx watch src/index.ts",
-    "build": "cd client && npx vite build",
-    "start": "cd server && npx tsx src/index.ts",
-    "install:all": "cd server && npm install --no-fund --no-audit && cd ../client && npm install --no-fund --no-audit"
-  },
-  "keywords": [
-    "archon",
-    "lean4",
-    "formalization",
-    "dashboard"
-  ]
-}
-
-----
-src/archon/ui/server/package.json
-{
-  "name": "archon-ui-server",
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js"
-  },
-  "dependencies": {
-    "@fastify/cors": "^9.0.1",
-    "@fastify/static": "^7.0.4",
-    "@fastify/websocket": "^10.0.1",
-    "fastify": "^4.28.1",
-    "gray-matter": "^4.0.3",
-    "marked": "^12.0.2"
-  },
-  "devDependencies": {
-    "@types/node": "^20.14.2",
-    "tsx": "^4.15.4",
-    "typescript": "^5.4.5"
-  }
-}
-
-----
-src/archon/ui/server/tsconfig.json
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "esModuleInterop": true,
-    "strict": true,
-    "skipLibCheck": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "declaration": true
-  },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules"]
-}
-
-----
-src/archon/ui/server/src/utils.ts
-import fs from 'fs';
-import type { LogEntry } from './types.js';
-
-/** Read a file or return fallback on error */
-export function readFileOr(filePath: string, fallback: string): string {
-  try { return fs.readFileSync(filePath, 'utf-8'); } catch { return fallback; }
-}
-
-/** Parse a .jsonl file into typed entries */
-export function parseJsonl(filePath: string): LogEntry[] {
-  const content = readFileOr(filePath, '');
-  if (!content) return [];
-  return content.split('\n').filter(Boolean).map(line => {
-    try { return JSON.parse(line) as LogEntry; } catch { return null; }
-  }).filter((e): e is LogEntry => e !== null);
-}
-
-----
-src/archon/ui/server/src/types.ts
-export interface LogEntry {
-  ts: string;
-  event: 'shell' | 'thinking' | 'tool_call' | 'tool_result' | 'text' | 'session_end';
-  level?: 'info' | 'warn' | 'error';
-  message?: string;
-  content?: string;
-  tool?: string;
-  input?: Record<string, unknown>;
-  // session_end fields (actual JSONL format)
-  total_cost_usd?: number;
-  duration_ms?: number;
-  num_turns?: number;
-  input_tokens?: number;
-  output_tokens?: number;
-  model_usage?: Record<string, { inputTokens: number; outputTokens: number; costUSD: number }>;
-  summary?: string;
-  session_id?: string;
-}
-
-export interface ProgressData {
-  stage: string;
-  objectives: string[];
-  checklist: { label: string; done: boolean }[];
-}
-
-export interface Task {
-  id: string;
-  theorem: string;
-  file: string;
-  status: 'pending' | 'in-progress' | 'done';
-  proofSketch?: string;
-}
-
-export interface SessionSummary {
-  cost: number;
-  duration: number;
-  tokensIn: number;
-  tokensOut: number;
-  model: string;
-  turns: number;
-  timestamp: string;
-  summary?: string;
-}
-
-export interface AggregatedStats {
-  totalCost: number;
-  totalDuration: number;
-  totalTokensIn: number;
-  totalTokensOut: number;
-  sessionCount: number;
-  sessions: SessionSummary[];
-}
-
-----
-src/archon/ui/server/src/index.ts
-/**
- * Archon UI Server — entry point
- *
- * Composes route modules and starts Fastify.
- * Each route module is self-contained under ./routes/.
- */
-import Fastify from 'fastify';
-import cors from '@fastify/cors';
-import staticFiles from '@fastify/static';
-import websocket from '@fastify/websocket';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-// Route modules
-import { register as registerProject } from './routes/project.js';
-import { register as registerLogs } from './routes/logs.js';
-import { register as registerIterations } from './routes/iterations.js';
-import { register as registerJournal } from './routes/journal.js';
-import { register as registerSummary } from './routes/summary.js';
-import type { ProjectPaths } from './routes/project.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-function parseArgs(): { projectPath: string; port: number } {
-  const args = process.argv.slice(2);
-  let projectPath = process.cwd();
-  let port = 8080;
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--project' && i + 1 < args.length) projectPath = args[++i];
-    else if (args[i] === '--port' && i + 1 < args.length) port = parseInt(args[++i], 10);
-  }
-  return { projectPath, port };
-}
-
-export async function createServer(options: { projectPath: string; port: number }) {
-  const { projectPath, port } = options;
-
-  const paths: ProjectPaths = {
-    projectPath,
-    archonPath: path.join(projectPath, '.archon'),
-    logsPath: path.join(projectPath, '.archon', 'logs'),
-  };
-
-  const fastify = Fastify({ logger: false });
-  await fastify.register(cors);
-  await fastify.register(websocket);
-
-  // Serve built client (SPA)
-  const clientBuildPath = path.join(__dirname, '../../client/dist');
-  if (fs.existsSync(clientBuildPath)) {
-    await fastify.register(staticFiles, { root: clientBuildPath, prefix: '/' });
-    fastify.setNotFoundHandler((req, reply) => {
-      if (req.url.startsWith('/api/')) return reply.status(404).send({ error: 'Not found' });
-      return reply.sendFile('index.html');
-    });
-  }
-
-  // Register route modules
-  registerProject(fastify, paths);
-  registerLogs(fastify, paths);
-  registerIterations(fastify, paths);
-  registerJournal(fastify, paths);
-  registerSummary(fastify, paths);
-
-  await fastify.listen({ port, host: '0.0.0.0' });
-  return fastify;
-}
-
-// CLI entry point
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const { projectPath, port } = parseArgs();
-  console.log(`Archon UI → http://localhost:${port}  (project: ${projectPath})`);
-  createServer({ projectPath, port }).catch(err => { console.error(err); process.exit(1); });
-}
-
-----
-src/archon/ui/server/src/routes/project.ts
-/** Project, progress, tasks, sorry count — core project state routes */
-import fs from 'fs';
-import path from 'path';
-import type { FastifyInstance } from 'fastify';
-import type { ProgressData, Task } from '../types.js';
-import { readFileOr } from '../utils.js';
-
-export interface ProjectPaths {
-  projectPath: string;
-  archonPath: string;
-  logsPath: string;
-}
-
-function parseProgressMarkdown(content: string): ProgressData {
-  const stageMatch = content.match(/## Current Stage\s*\n\s*(\S+)/);
-  const stage = stageMatch?.[1] || 'init';
-
-  const objectives: string[] = [];
-  const objSection = content.match(/## Current Objectives\s*\n([\s\S]*?)(?=\n## |\n# |$)/);
-  if (objSection) {
-    for (const line of objSection[1].split('\n')) {
-      const m = line.match(/^\s*\d+\.\s+(.+)/);
-      if (m) objectives.push(m[1].trim());
-    }
-  }
-
-  const checklist: { label: string; done: boolean }[] = [];
-  const stagesSection = content.match(/## Stages\s*\n([\s\S]*?)(?=\n## |\n# |$)/);
-  if (stagesSection) {
-    for (const line of stagesSection[1].split('\n')) {
-      const m = line.match(/^\s*-\s*\[([ xX])\]\s*(.+)/);
-      if (m) checklist.push({ label: m[2].trim(), done: m[1] !== ' ' });
-    }
-  }
-  return { stage, objectives, checklist };
-}
-
-function parseTasksMarkdown(content: string, status: 'pending' | 'done'): Task[] {
-  const tasks: Task[] = [];
-  let currentFile = '';
-  for (const line of content.split('\n')) {
-    const fileMatch = line.match(/^## (.+\.lean)/);
-    if (fileMatch) { currentFile = fileMatch[1].trim(); continue; }
-    const thMatch = line.match(/^### (.+)/);
-    if (thMatch) {
-      tasks.push({ id: '', theorem: thMatch[1].trim(), file: currentFile, status, proofSketch: '' });
-    }
-  }
-  return tasks.map((t, i) => ({ ...t, id: `task-${status}-${i}` }));
-}
-
-function countSorries(projectPath: string): { file: string; count: number; lines: number[] }[] {
-  const results: { file: string; count: number; lines: number[] }[] = [];
-  function walk(d: string) {
-    for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
-      const full = path.join(d, entry.name);
-      if (entry.isDirectory() && !['_lake', '.lake', '.archon', 'node_modules'].includes(entry.name)) walk(full);
-      else if (entry.isFile() && entry.name.endsWith('.lean')) {
-        const content = fs.readFileSync(full, 'utf-8');
-        const fileLines = content.split('\n');
-        const sorryLines: number[] = [];
-        fileLines.forEach((line, idx) => {
-          if (/\bsorry\b/.test(line) && !line.trimStart().startsWith('--')) sorryLines.push(idx + 1);
-        });
-        if (sorryLines.length > 0) {
-          results.push({ file: path.relative(projectPath, full), count: sorryLines.length, lines: sorryLines });
-        }
-      }
-    }
-  }
-  try { walk(projectPath); } catch { /* ignore permission errors */ }
-  return results;
-}
-
-export function register(fastify: FastifyInstance, paths: ProjectPaths) {
-  const { projectPath, archonPath } = paths;
-  const taskResultsPath = path.join(archonPath, 'task_results');
-
-  fastify.get('/api/project', async () => ({
-    name: path.basename(projectPath),
-    path: projectPath,
-    archonPath,
-  }));
-
-  fastify.get('/api/progress', async () => {
-    const content = readFileOr(path.join(archonPath, 'PROGRESS.md'), '');
-    return parseProgressMarkdown(content);
-  });
-
-  fastify.get('/api/tasks', async () => {
-    const pending = parseTasksMarkdown(readFileOr(path.join(archonPath, 'task_pending.md'), ''), 'pending');
-    const done = parseTasksMarkdown(readFileOr(path.join(archonPath, 'task_done.md'), ''), 'done');
-    return [...pending, ...done];
-  });
-
-  fastify.get('/api/sorry-count', async () => {
-    const files = countSorries(projectPath);
-    const total = files.reduce((s, f) => s + f.count, 0);
-    return { total, files };
-  });
-
-  fastify.get('/api/task-results', async () => {
-    if (!fs.existsSync(taskResultsPath)) return [];
-    return fs.readdirSync(taskResultsPath).filter(f => f.endsWith('.md')).map(f => ({
-      name: f, content: fs.readFileSync(path.join(taskResultsPath, f), 'utf-8'),
-    }));
-  });
-}
-
-----
-src/archon/ui/server/src/routes/logs.ts
-/** Logs API — tree listing, content retrieval, WebSocket streaming */
-import fs from 'fs';
-import path from 'path';
-import type { FastifyInstance } from 'fastify';
-import { parseJsonl } from '../utils.js';
-import type { ProjectPaths } from './project.js';
-
-interface LogFileEntry { name: string; path: string; size: number; modified: string; role?: string }
-interface LogGroup { id: string; files: LogFileEntry[]; meta?: Record<string, unknown> }
-
-function resolveLogPath(logsPath: string, logPath: string): string | null {
-  const normalized = path.normalize(logPath).replace(/^(\.\.[/\\])+/, '');
-  const full = path.join(logsPath, normalized);
-  if (!full.startsWith(logsPath)) return null;
-  if (!full.endsWith('.jsonl')) return full + '.jsonl';
-  return full;
-}
-
-export function register(fastify: FastifyInstance, paths: ProjectPaths) {
-  const { logsPath } = paths;
-
-  // Tree-structured log listing
-  fastify.get('/api/logs', async () => {
-    if (!fs.existsSync(logsPath)) return { flat: [], groups: [] };
-
-    const flat: LogFileEntry[] = fs.readdirSync(logsPath)
-      .filter(f => f.endsWith('.jsonl') && fs.statSync(path.join(logsPath, f)).isFile())
-      .map(f => {
-        const stat = fs.statSync(path.join(logsPath, f));
-        return { name: f, path: f, size: stat.size, modified: stat.mtime.toISOString() };
-      })
-      .sort((a, b) => b.modified.localeCompare(a.modified));
-
-    const groups: LogGroup[] = [];
-    const iterDirs = fs.readdirSync(logsPath)
-      .filter(d => d.startsWith('iter-') && fs.statSync(path.join(logsPath, d)).isDirectory())
-      .sort();
-
-    for (const dir of iterDirs) {
-      const dirPath = path.join(logsPath, dir);
-      const files: LogFileEntry[] = [];
-
-      for (const f of fs.readdirSync(dirPath).filter(f => f.endsWith('.jsonl') && f !== 'provers-combined.jsonl')) {
-        const full = path.join(dirPath, f);
-        if (!fs.statSync(full).isFile()) continue;
-        const role = f.replace('.jsonl', '');
-        const stat = fs.statSync(full);
-        files.push({ name: f, path: `${dir}/${f}`, size: stat.size, modified: stat.mtime.toISOString(), role });
-      }
-
-      const proversDir = path.join(dirPath, 'provers');
-      if (fs.existsSync(proversDir) && fs.statSync(proversDir).isDirectory()) {
-        for (const f of fs.readdirSync(proversDir).filter(f => f.endsWith('.jsonl')).sort()) {
-          const full = path.join(proversDir, f);
-          const stat = fs.statSync(full);
-          files.push({ name: f, path: `${dir}/provers/${f}`, size: stat.size, modified: stat.mtime.toISOString(), role: 'prover' });
-        }
-      }
-
-      let meta: Record<string, unknown> | undefined;
-      const metaFile = path.join(dirPath, 'meta.json');
-      try { meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8')); } catch { /* skip */ }
-
-      groups.push({ id: dir, files, meta });
-    }
-
-    return { flat, groups };
-  });
-
-  // Wildcard log content
-  fastify.get('/api/logs/*', async (req, reply) => {
-    const subpath = (req.params as Record<string, string>)['*'];
-    if (!subpath) return reply.status(400).send({ error: 'Missing path' });
-    const filePath = resolveLogPath(logsPath, subpath);
-    if (!filePath || !fs.existsSync(filePath)) return reply.status(404).send({ error: 'Not found' });
-    return parseJsonl(filePath);
-  });
-
-  // WebSocket streaming
-  fastify.get('/api/log-stream/*', { websocket: true }, (socket, req) => {
-    const subpath = (req.params as Record<string, string>)['*'] || '';
-    const filePath = resolveLogPath(logsPath, subpath);
-    if (!filePath || !fs.existsSync(filePath)) {
-      socket.send(JSON.stringify({ type: 'error', message: 'Not found' }));
-      socket.close();
-      return;
-    }
-
-    let lastSize = fs.statSync(filePath).size;
-    socket.send(JSON.stringify({ type: 'ready', size: lastSize }));
-
-    const watcher = fs.watch(filePath, () => {
-      try {
-        const newSize = fs.statSync(filePath).size;
-        if (newSize <= lastSize) return;
-        const stream = fs.createReadStream(filePath, { start: lastSize, end: newSize - 1, encoding: 'utf-8' });
-        let buffer = '';
-        stream.on('data', (chunk) => {
-          buffer += chunk;
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-          for (const line of lines) {
-            if (line.trim()) try { socket.send(line); } catch { /* ignore */ }
-          }
-        });
-        stream.on('end', () => {
-          if (buffer.trim()) try { socket.send(buffer); } catch { /* ignore */ }
-        });
-        lastSize = newSize;
-      } catch { /* ignore stat errors during write */ }
-    });
-
-    socket.on('close', () => watcher.close());
-  });
-}
-
-----
-src/archon/ui/server/src/routes/summary.ts
-/** Summary API — aggregated cost/token/session stats across all logs */
-import fs from 'fs';
-import type { FastifyInstance } from 'fastify';
-import type { LogEntry, AggregatedStats, SessionSummary } from '../types.js';
-import { parseJsonl } from '../utils.js';
-import type { ProjectPaths } from './project.js';
-
-function calculateStats(logs: LogEntry[]): AggregatedStats {
-  const sessions: SessionSummary[] = [];
-  let totalCost = 0, totalDuration = 0, totalTokensIn = 0, totalTokensOut = 0;
-
-  for (const entry of logs) {
-    if (entry.event !== 'session_end') continue;
-    const cost = entry.total_cost_usd || 0;
-    const duration = entry.duration_ms || 0;
-    const tokIn = entry.input_tokens || 0;
-    const tokOut = entry.output_tokens || 0;
-    const model = entry.model_usage ? Object.keys(entry.model_usage)[0] || 'unknown' : 'unknown';
-    totalCost += cost;
-    totalDuration += duration;
-    totalTokensIn += tokIn;
-    totalTokensOut += tokOut;
-    sessions.push({
-      cost, duration, tokensIn: tokIn, tokensOut: tokOut,
-      model, turns: entry.num_turns || 0, timestamp: entry.ts,
-      summary: entry.summary,
-    });
-  }
-  return { totalCost, totalDuration, totalTokensIn, totalTokensOut, sessionCount: sessions.length, sessions };
-}
-
-export function register(fastify: FastifyInstance, paths: ProjectPaths) {
-  const { logsPath } = paths;
-
-  fastify.get('/api/summary', async () => {
-    if (!fs.existsSync(logsPath)) return { totalCost: 0, totalDuration: 0, totalTokensIn: 0, totalTokensOut: 0, sessionCount: 0, sessions: [] };
-    let allLogs: LogEntry[] = [];
-    function walkJsonl(dir: string) {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = `${dir}/${entry.name}`;
-        if (entry.isDirectory()) walkJsonl(full);
-        else if (entry.isFile() && entry.name.endsWith('.jsonl')) allLogs = allLogs.concat(parseJsonl(full));
-      }
-    }
-    walkJsonl(logsPath);
-    return calculateStats(allLogs);
-  });
-}
-
-----
-src/archon/ui/server/src/routes/iterations.ts
-/** Iterations API — meta.json based iteration summaries */
-import fs from 'fs';
-import path from 'path';
-import type { FastifyInstance } from 'fastify';
-import { parseJsonl } from '../utils.js';
-import type { ProjectPaths } from './project.js';
-
-function listIterDirs(logsPath: string): string[] {
-  if (!fs.existsSync(logsPath)) return [];
-  return fs.readdirSync(logsPath)
-    .filter(d => d.startsWith('iter-') && fs.statSync(path.join(logsPath, d)).isDirectory())
-    .sort();
-}
-
-function readMeta(logsPath: string, iterDir: string): Record<string, unknown> | null {
-  const metaFile = path.join(logsPath, iterDir, 'meta.json');
-  try { return JSON.parse(fs.readFileSync(metaFile, 'utf-8')); } catch { return null; }
-}
-
-export function register(fastify: FastifyInstance, paths: ProjectPaths) {
-  const { logsPath } = paths;
-
-  fastify.get('/api/iterations', async () => {
-    return listIterDirs(logsPath).map(d => {
-      const meta = readMeta(logsPath, d);
-      if (!meta) return { id: d };
-      return { id: d, ...meta };
-    });
-  });
-
-  fastify.get<{ Params: { id: string } }>('/api/iterations/:id', async (req, reply) => {
-    const iterDir = req.params.id;
-    if (!iterDir.startsWith('iter-')) return reply.status(400).send({ error: 'Invalid iteration id' });
-    const meta = readMeta(logsPath, iterDir);
-    if (!meta) return reply.status(404).send({ error: 'Not found' });
-
-    const proversDir = path.join(logsPath, iterDir, 'provers');
-    const proverFiles: { slug: string; size: number }[] = [];
-    if (fs.existsSync(proversDir)) {
-      for (const f of fs.readdirSync(proversDir).filter(f => f.endsWith('.jsonl'))) {
-        const stat = fs.statSync(path.join(proversDir, f));
-        proverFiles.push({ slug: f.replace('.jsonl', ''), size: stat.size });
-      }
-    }
-    return { id: iterDir, ...meta, proverFiles };
-  });
-
-  fastify.get<{ Params: { id: string; file: string } }>('/api/iterations/:id/provers/:file', async (req, reply) => {
-    const { id, file } = req.params;
-    if (!id.startsWith('iter-')) return reply.status(400).send({ error: 'Invalid iteration id' });
-    const filePath = path.join(logsPath, id, 'provers', file.endsWith('.jsonl') ? file : `${file}.jsonl`);
-    if (!fs.existsSync(filePath)) return reply.status(404).send({ error: 'Not found' });
-    return parseJsonl(filePath);
-  });
-}
-
-----
-src/archon/ui/server/src/routes/journal.ts
-/** Journal API — proof-journal sessions, milestones, summaries */
-import fs from 'fs';
-import path from 'path';
-import type { FastifyInstance } from 'fastify';
-import { readFileOr } from '../utils.js';
-import type { ProjectPaths } from './project.js';
-
-export function register(fastify: FastifyInstance, paths: ProjectPaths) {
-  const { archonPath } = paths;
-  const journalPath = path.join(archonPath, 'proof-journal');
-  const journalSessionsPath = path.join(journalPath, 'sessions');
-
-  // Also scan current_session/ for in-progress data
-  function listSessions(): string[] {
-    if (!fs.existsSync(journalSessionsPath)) return [];
-    return fs.readdirSync(journalSessionsPath)
-      .filter(d => d.startsWith('session_') && fs.statSync(path.join(journalSessionsPath, d)).isDirectory())
-      .sort((a, b) => {
-        const na = parseInt(a.replace('session_', ''), 10) || 0;
-        const nb = parseInt(b.replace('session_', ''), 10) || 0;
-        return na - nb;
-      });
-  }
-
-  function sessionDir(id: string): string {
-    return path.join(journalSessionsPath, id);
-  }
-
-  // List all sessions with a summary of what files exist in each
-  fastify.get('/api/journal/sessions', async () => {
-    const sessions = listSessions();
-    return sessions.map(id => {
-      const dir = sessionDir(id);
-      const hasMilestones = fs.existsSync(path.join(dir, 'milestones.jsonl'));
-      const hasSummary = fs.existsSync(path.join(dir, 'summary.md'));
-      const hasRecommendations = fs.existsSync(path.join(dir, 'recommendations.md'));
-      return { id, hasMilestones, hasSummary, hasRecommendations };
-    });
-  });
-
-  // Milestones — return empty array if file missing
-  fastify.get<{ Params: { id: string } }>('/api/journal/sessions/:id/milestones', async (req) => {
-    const filePath = path.join(sessionDir(req.params.id), 'milestones.jsonl');
-    const content = readFileOr(filePath, '');
-    if (!content) return [];
-    return content.split('\n').filter(Boolean).map(line => {
-      try { return JSON.parse(line); } catch { return null; }
-    }).filter(Boolean);
-  });
-
-  // Summary — return empty content if file missing
-  fastify.get<{ Params: { id: string } }>('/api/journal/sessions/:id/summary', async (req) => {
-    const filePath = path.join(sessionDir(req.params.id), 'summary.md');
-    return { content: readFileOr(filePath, '') };
-  });
-
-  // Recommendations — return empty content if file missing
-  fastify.get<{ Params: { id: string } }>('/api/journal/sessions/:id/recommendations', async (req) => {
-    const filePath = path.join(sessionDir(req.params.id), 'recommendations.md');
-    return { content: readFileOr(filePath, '') };
-  });
-
-  // All milestones across all sessions (for cross-session aggregation)
-  fastify.get('/api/journal/all-milestones', async () => {
-    const sessions = listSessions();
-    const result: { sessionId: string; milestones: unknown[] }[] = [];
-    for (const id of sessions) {
-      const filePath = path.join(sessionDir(id), 'milestones.jsonl');
-      const content = readFileOr(filePath, '');
-      if (!content) continue;
-      const milestones = content.split('\n').filter(Boolean).map(line => {
-        try { return JSON.parse(line); } catch { return null; }
-      }).filter(Boolean);
-      if (milestones.length > 0) result.push({ sessionId: id, milestones });
-    }
-    return result;
-  });
-
-  // Project status
-  fastify.get('/api/journal/status', async () => {
-    const filePath = path.join(archonPath, 'PROJECT_STATUS.md');
-    return { content: readFileOr(filePath, '') };
-  });
-}
-
-----
-src/archon/ui/client/tsconfig.node.json
-{
-  "compilerOptions": {
-    "composite": true,
-    "skipLibCheck": true,
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "allowSyntheticDefaultImports": true,
-    "strict": true
-  },
-  "include": ["vite.config.ts"]
-}
-
-----
-src/archon/ui/client/index.html
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Archon Dashboard</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
-
-----
-src/archon/ui/client/package.json
-{
-  "name": "archon-ui-client",
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@tanstack/react-query": "^5.40.0",
-    "echarts": "^5.5.0",
-    "echarts-for-react": "^3.0.2",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.23.1"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "typescript": "^5.4.5",
-    "vite": "^5.3.1"
-  }
-}
-
-----
-src/archon/ui/client/tsconfig.json
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "react-jsx",
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    }
-  },
-  "include": ["src"],
-  "references": [{ "path": "./tsconfig.node.json" }]
-}
-
-----
-src/archon/ui/client/vite.config.ts
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-    },
-  },
-  build: {
-    outDir: 'dist',
-    sourcemap: true,
-  },
-});
-
-----
-src/archon/ui/client/dist/index.html
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Archon Dashboard</title>
-    <script type="module" crossorigin src="/assets/index-DFzVb-QO.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-D88wii7r.css">
-  </head>
-  <body>
-    <div id="root"></div>
-  </body>
-</html>
-
-----
-src/archon/ui/client/src/App.tsx
-import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import { useProject } from './hooks/useApi';
-import Overview from './views/Overview';
-import LogViewer from './views/LogViewer';
-import Journal from './views/Journal';
-
-function ConnectionBanner({ isError }: { isError: boolean }) {
-  if (!isError) return null;
-  return (
-    <div style={{
-      background: '#dc3545', color: 'white', padding: '6px 16px',
-      fontSize: '13px', textAlign: 'center', fontWeight: 500,
-    }}>
-      ⚠ Cannot reach server — check that <code style={{ background: 'rgba(0,0,0,0.2)', padding: '1px 4px', borderRadius: 3 }}>
-      ui/start.sh</code> is running and you're on the correct port
-    </div>
-  );
-}
-
-export default function App() {
-  const { data: project, isError } = useProject();
-
-  return (
-    <div className="app">
-      <ConnectionBanner isError={isError} />
-      <header className="header">
-        <h1>Archon</h1>
-        {project && <span className="project-badge" title={project.path}>{project.name}</span>}
-        <nav className="header-nav">
-          <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end>Overview</NavLink>
-          <NavLink to="/logs" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Logs</NavLink>
-          <NavLink to="/journal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Journal</NavLink>
-        </nav>
-      </header>
-      <main className="main-content">
-        <Routes>
-          <Route path="/" element={<Overview />} />
-          <Route path="/logs" element={<LogViewer />} />
-          <Route path="/journal" element={<Journal />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </main>
-    </div>
-  );
-}
-
-----
-src/archon/ui/client/src/main.tsx
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter } from 'react-router-dom';
-import App from './App';
-import './styles/global.css';
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60,
-      retry: 1,
-    },
-  },
-});
-
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </QueryClientProvider>
-  </React.StrictMode>
-);
-
-----
-src/archon/ui/client/src/vite-env.d.ts
-declare module '*.module.css' {
-  const classes: { [key: string]: string };
-  export default classes;
-}
-
-----
-src/archon/ui/client/src/types/index.ts
-// --- Log types ---
-export interface LogEntry {
-  ts: string;
-  event: 'shell' | 'thinking' | 'tool_call' | 'tool_result' | 'text' | 'session_end';
-  level?: 'info' | 'warn' | 'error';
-  message?: string;
-  content?: string;
-  tool?: string;
-  input?: Record<string, unknown>;
-  total_cost_usd?: number;
-  duration_ms?: number;
-  num_turns?: number;
-  input_tokens?: number;
-  output_tokens?: number;
-  model_usage?: Record<string, { inputTokens: number; outputTokens: number; costUSD: number }>;
-  summary?: string;
-}
-
-export interface LogFile { name: string; path: string; size: number; modified: string; role?: string }
-
-export interface LogGroup {
-  id: string;
-  files: LogFile[];
-  meta?: {
-    iteration?: number;
-    stage?: string;
-    mode?: string;
-    startedAt?: string;
-    completedAt?: string;
-    wallTimeSecs?: number;
-    plan?: { status: string; durationSecs?: number };
-    prover?: { status: string; durationSecs?: number };
-    review?: { status: string; durationSecs?: number };
-    provers?: Record<string, { file: string; status: string }>;
-  };
-}
-
-export interface LogsResponse {
-  flat: LogFile[];
-  groups: LogGroup[];
-}
-
-// --- Progress types ---
-export interface ProgressData {
-  stage: string;
-  objectives: string[];
-  checklist: { label: string; done: boolean }[];
-}
-
-// --- Task types ---
-export interface Task {
-  id: string;
-  theorem: string;
-  file: string;
-  status: 'pending' | 'in-progress' | 'done';
-  proofSketch?: string;
-}
-
-// --- Session summary types ---
-export interface SessionSummary {
-  cost: number;
-  duration: number;
-  tokensIn: number;
-  tokensOut: number;
-  model: string;
-  turns: number;
-  timestamp: string;
-  summary?: string;
-}
-
-export interface AggregatedStats {
-  totalCost: number;
-  totalDuration: number;
-  totalTokensIn: number;
-  totalTokensOut: number;
-  sessionCount: number;
-  sessions: SessionSummary[];
-}
-
-// --- Sorry count ---
-export interface SorryCount {
-  total: number;
-  files: { file: string; count: number; lines: number[] }[];
-}
-
-// --- Journal types (aligned with cctest-dashboard Milestone/Attempt schema) ---
-export interface Attempt {
-  attempt: number;
-  strategy: string;
-  code_tried?: string;
-  lean_error?: string;
-  goal_before?: string;
-  goal_after?: string;
-  result: string;
-  duration_min?: number;
-  insight?: string;
-}
-
-export interface Milestone {
-  timestamp: string;
-  status: 'solved' | 'partial' | 'blocked' | 'failed_retry' | 'not_started';
-  target: { file: string; theorem: string };
-  session: { id: string; model: string };
-  findings: { blocker?: string; key_lemmas_used?: string[] };
-  attempts: Attempt[];
-  next_steps?: string;
-}
-
-// --- Iteration types ---
-export interface ProverMeta {
-  file: string;
-  status: 'running' | 'done' | 'error';
-}
-
-export interface IterationMeta {
-  id: string;
-  iteration?: number;
-  stage?: string;
-  mode?: 'parallel' | 'serial';
-  startedAt?: string;
-  completedAt?: string;
-  wallTimeSecs?: number;
-  plan?: { status: string; durationSecs?: number };
-  prover?: { status: string; durationSecs?: number };
-  review?: { status: string; durationSecs?: number };
-  provers?: Record<string, ProverMeta>;
-  proverFiles?: { slug: string; size: number }[];
-}
-
-----
-src/archon/ui/client/src/utils/markdown.ts
-/** Minimal markdown → HTML converter */
-export function markdownToHtml(content: string): string {
-  if (!content) return '';
-
-  // Step 1: extract fenced code blocks to protect them
-  const codeBlocks: string[] = [];
-  let result = content.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    codeBlocks.push(`<pre><code>${code}</code></pre>`);
-    return `\x00CODE${codeBlocks.length - 1}\x00`;
-  });
-
-  // Step 2: extract markdown tables before line-level transforms
-  result = result.replace(
-    /(^(\|.+)\n)(^\|[\s:|-]+\n)((?:^\|.+\n?)+)/gm,
-    (_, headerLine, _h, _sep, bodyBlock) => {
-      const parseRow = (row: string) => {
-        const trimmed = row.trim();
-        const inner = trimmed.startsWith('|') ? trimmed.slice(1) : trimmed;
-        const stripped = inner.endsWith('|') ? inner.slice(0, -1) : inner;
-        return stripped.split('|').map(c => c.trim());
-      };
-      const headers = parseRow(headerLine);
-      const bodyRows = bodyBlock.trim().split('\n').map(parseRow);
-      let table = '<table><thead><tr>';
-      for (const h of headers) table += `<th>${h}</th>`;
-      table += '</tr></thead><tbody>';
-      for (const row of bodyRows) {
-        table += '<tr>';
-        for (const cell of row) table += `<td>${cell}</td>`;
-        table += '</tr>';
-      }
-      table += '</tbody></table>';
-      return table;
-    }
-  );
-
-  // Step 3: inline & block transforms
-  result = result
-    .replace(/^##### (.+)$/gm, '<h6>$1</h6>')
-    .replace(/^#### (.+)$/gm, '<h5>$1</h5>')
-    .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-    .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^# (.+)$/gm, '<h2>$1</h2>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-    .replace(/\n\n/g, '<br/>')
-    .replace(/\n/g, '<br/>');
-
-  // Step 4: restore code blocks
-  result = result.replace(/\x00CODE(\d+)\x00/g, (_, i) => codeBlocks[parseInt(i)]);
-
-  return result;
-}
-
-----
-src/archon/ui/client/src/utils/format.ts
-/** Shared formatting utilities */
-
-export function fmtDuration(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  return m < 60 ? `${m}m${s % 60}s` : `${Math.floor(m / 60)}h${m % 60}m`;
-}
-
-export function fmtTokens(n: number): string {
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
-  return String(n);
-}
-
-export function fmtTime(ts: string): string {
-  try {
-    // Treat bare ISO timestamps (no Z or offset) as UTC to match shell-side `date -u`
-    const normalized = /\d{4}-\d{2}-\d{2}T[\d:.]+$/.test(ts) ? ts + 'Z' : ts;
-    return new Date(normalized).toLocaleTimeString('en-GB', { hour12: false });
-  } catch { return ts; }
-}
-
-export function truncate(s: string, max: number): { text: string; truncated: boolean } {
-  if (s.length <= max) return { text: s, truncated: false };
-  return { text: s.slice(0, max), truncated: true };
-}
-
-----
-src/archon/ui/client/src/utils/constants.ts
-/** Shared constants */
-export const STATUS_COLORS: Record<string, string> = {
-  solved: 'var(--green)',
-  partial: 'var(--orange)',
-  blocked: 'var(--red)',
-  failed_retry: 'var(--red)',
-  not_started: 'var(--text-muted)',
-  pending: 'var(--orange)',
-  'in-progress': 'var(--blue)',
-  done: 'var(--green)',
-};
-
-----
-src/archon/ui/client/src/utils/aggregate.ts
-/** Cross-session target aggregation (mirrors cctest-dashboard aggregateTargets) */
-import type { Milestone } from '../types';
-
-export interface TargetHistory {
-  file: string;
-  theorem: string;
-  status: string;
-  sessions: string[];
-  milestones: Milestone[];
-  totalAttempts: number;
-}
-
-const STATUS_PRIORITY: Record<string, number> = {
-  solved: 4, partial: 3, blocked: 2, failed_retry: 2, not_started: 1,
-};
-
-export function aggregateTargets(
-  allMilestones: { sessionId: string; milestones: Milestone[] }[],
-): TargetHistory[] {
-  const map = new Map<string, TargetHistory>();
-
-  for (const { sessionId, milestones } of allMilestones) {
-    for (const m of milestones) {
-      const file = m.target?.file || '?';
-      const theorem = m.target?.theorem || '?';
-      if (file === '?' && theorem === '?') continue;
-      const key = `${file}::${theorem}`;
-
-      if (!map.has(key)) {
-        map.set(key, { file, theorem, status: m.status, sessions: [], milestones: [], totalAttempts: 0 });
-      }
-      const th = map.get(key)!;
-      if ((STATUS_PRIORITY[m.status] || 0) > (STATUS_PRIORITY[th.status] || 0)) {
-        th.status = m.status;
-      }
-      if (!th.sessions.includes(sessionId)) th.sessions.push(sessionId);
-      th.milestones.push(m);
-      th.totalAttempts += (m.attempts || []).length;
-    }
-  }
-
-  return Array.from(map.values()).sort(
-    (a, b) => a.file.localeCompare(b.file) || a.theorem.localeCompare(b.theorem),
-  );
-}
-
-----
-src/archon/ui/client/src/styles/global.css
-:root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8f9fa;
-  --bg-tertiary: #f0f1f3;
-  --border: #e2e4e8;
-  --text-primary: #24292e;
-  --text-secondary: #586069;
-  --text-muted: #959da5;
-  --blue: #0366d6;
-  --green: #28a745;
-  --orange: #e36209;
-  --red: #cb2431;
-  --purple: #6f42c1;
-  --font-mono: 'SF Mono', 'Menlo', 'Consolas', monospace;
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-}
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html, body, #root { height: 100%; width: 100%; }
-body {
-  font-family: var(--font-sans);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: 13px;
-  line-height: 1.5;
-}
-a { color: var(--blue); text-decoration: none; }
-code, pre { font-family: var(--font-mono); }
-
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-.app { display: flex; flex-direction: column; height: 100%; }
-
-.header {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 8px 16px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-}
-.header h1 { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
-
-.project-badge {
-  font-size: 11px; font-weight: 500; font-family: var(--font-mono);
-  padding: 2px 8px; border-radius: 3px;
-  background: rgba(3,102,214,0.08); color: var(--blue);
-  cursor: default;
-}
-
-.header-nav { display: flex; gap: 2px; }
-.nav-link {
-  padding: 6px 12px;
-  border-radius: 4px;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-.nav-link:hover { color: var(--text-primary); }
-.nav-link.active { color: var(--blue); background: rgba(3,102,214,0.06); }
-
-.main-content { flex: 1; overflow: auto; padding: 16px; }
-
-select {
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 4px 8px;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-family: var(--font-sans);
-}
-
-----
-src/archon/ui/client/src/components/AttemptCard.tsx
-import { useState } from 'react';
-import type { Attempt } from '../types';
-import styles from './AttemptCard.module.css';
-
-interface Props { att: Attempt; }
-
-export default function AttemptCard({ att }: Props) {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <div className={styles.attempt}>
-      <div className={styles.header} onClick={() => setExpanded(!expanded)}>
-        <span className={styles.num}>#{att.attempt}</span>
-        <span className={styles.strategy}>{att.strategy || '—'}</span>
-        <span className={`${styles.result} ${styles[`result_${att.result}`]}`}>{att.result}</span>
-        <span className={styles.expandHint}>{expanded ? '▾' : '▸'}</span>
-      </div>
-      {expanded && (
-        <div className={styles.body}>
-          {att.code_tried && (
-            <div className={styles.field}>
-              <span className={styles.label}>Code:</span>
-              <pre className={styles.codeBlock}>{att.code_tried}</pre>
-            </div>
-          )}
-          {att.lean_error && (
-            <div className={styles.field}>
-              <span className={styles.labelError}>Lean error:</span>
-              <pre className={styles.errorBlock}>{att.lean_error}</pre>
-            </div>
-          )}
-          {att.goal_before && (
-            <div className={styles.field}>
-              <span className={styles.label}>Goal before:</span>
-              <code className={styles.goalCode}>{att.goal_before}</code>
-            </div>
-          )}
-          {att.goal_after && (
-            <div className={styles.field}>
-              <span className={styles.label}>Goal after:</span>
-              <code className={styles.goalCode}>{att.goal_after}</code>
-            </div>
-          )}
-          {att.insight && (
-            <div className={styles.insight}>💡 {att.insight}</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-----
-src/archon/ui/client/src/components/AttemptCard.module.css
-.attempt { border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
-.header {
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 8px; cursor: pointer; font-size: 12px;
-  background: var(--bg-tertiary);
-}
-.header:hover { background: var(--border); }
-.num { font-family: var(--font-mono); color: var(--text-muted); font-size: 11px; flex-shrink: 0; }
-.strategy { color: var(--text-secondary); flex: 1; }
-.result { font-weight: 600; flex-shrink: 0; }
-.result_success, .result_solved { color: var(--green); }
-.result_partial { color: var(--orange); }
-.result_failed, .result_blocked { color: var(--red); }
-.expandHint { color: var(--text-muted); font-size: 10px; }
-
-.body { padding: 6px 8px; font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
-.field { display: flex; flex-direction: column; gap: 2px; }
-.label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
-.labelError { font-size: 11px; color: var(--red); font-weight: 600; }
-
-.codeBlock {
-  margin: 0; padding: 6px 8px;
-  background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 3px;
-  font-family: var(--font-mono); font-size: 11px;
-  color: var(--text-primary); white-space: pre-wrap; word-break: break-word;
-}
-.errorBlock {
-  margin: 0; padding: 6px 8px;
-  background: #fff5f5; border: 1px solid #fecaca; border-radius: 3px;
-  font-family: var(--font-mono); font-size: 11px;
-  color: var(--red); white-space: pre-wrap; word-break: break-word;
-}
-.goalCode { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
-.insight { font-size: 12px; color: var(--blue); font-style: italic; margin-top: 2px; }
-
-----
-src/archon/ui/client/src/components/LogEntryLine.tsx
-import { useState } from 'react';
-import type { LogEntry } from '../types';
-import { fmtTime, truncate } from '../utils/format';
-import styles from './LogEntryLine.module.css';
-
-const EVENT_COLORS: Record<string, string> = {
-  shell: 'var(--blue)', thinking: 'var(--text-muted)', tool_call: 'var(--purple)',
-  tool_result: 'var(--orange)', text: 'var(--green)', session_end: 'var(--green)',
-};
-
-interface Props { entry: LogEntry; }
-
-export default function LogEntryLine({ entry }: Props) {
-  const [expanded, setExpanded] = useState(false);
-
-  let headline = '';
-  let detail = '';
-  let hasDetail = false;
-
-  switch (entry.event) {
-    case 'shell':
-      headline = entry.message || '';
-      break;
-    case 'thinking': {
-      const thinkContent = entry.content || '';
-      const thinkTrunc = truncate(thinkContent, 200);
-      headline = thinkTrunc.text;
-      if (thinkTrunc.truncated || thinkContent.includes('\n')) { detail = thinkContent; hasDetail = true; }
-      break;
-    }
-    case 'text': {
-      const textContent = entry.content || entry.message || '';
-      const textTrunc = truncate(textContent, 200);
-      headline = textTrunc.text;
-      if (textTrunc.truncated || textContent.includes('\n')) { detail = textContent; hasDetail = true; }
-      break;
-    }
-    case 'tool_call': {
-      const toolName = entry.tool || '?';
-      let argSummary = '';
-      if (entry.input) {
-        const inp = entry.input as Record<string, unknown>;
-        if (inp.command) argSummary = String(inp.command);
-        else if (inp.file_path) argSummary = String(inp.file_path);
-        else if (inp.path) argSummary = String(inp.path);
-        else if (inp.pattern) argSummary = String(inp.pattern);
-        else if (inp.old_string) argSummary = `${inp.file_path || ''} (edit)`;
-        else {
-          const firstVal = Object.values(inp).find(v => typeof v === 'string');
-          if (firstVal) argSummary = String(firstVal).slice(0, 120);
-        }
-      }
-      headline = argSummary ? `${toolName}: ${argSummary}` : toolName;
-      if (entry.input) { detail = JSON.stringify(entry.input, null, 2); hasDetail = true; }
-      break;
-    }
-    case 'tool_result': {
-      const content = entry.content || entry.message || '';
-      const t = truncate(content, 150);
-      headline = t.text;
-      if (t.truncated || content.includes('\n')) { detail = content; hasDetail = true; }
-      break;
-    }
-    case 'session_end': {
-      const dur = entry.duration_ms ? `${(entry.duration_ms / 1000).toFixed(0)}s` : '';
-      let model = '';
-      if (entry.model_usage) {
-        const fullName = Object.keys(entry.model_usage)[0] || '';
-        // Shorten: claude-opus-4-20250514 → opus-4, claude-sonnet-4-... → sonnet-4
-        model = fullName.replace(/^claude-/, '').replace(/-\d{8}$/, '');
-      }
-      const parts = ['Session end'];
-      if (model) parts.push(model);
-      if (dur) parts.push(dur);
-      if (entry.num_turns) parts.push(`${entry.num_turns} turns`);
-      if (entry.total_cost_usd) parts.push(`$${entry.total_cost_usd.toFixed(2)}`);
-      headline = parts.join(' · ');
-      if (entry.summary) { detail = entry.summary; hasDetail = true; }
-      break;
-    }
-  }
-
-  return (
-    <div className={styles.line}>
-      <span className={styles.ts}>{fmtTime(entry.ts)}</span>
-      <span className={styles.event} style={{ color: EVENT_COLORS[entry.event] || 'var(--text-muted)' }}>
-        {entry.event}{entry.level === 'error' ? '!' : entry.level === 'warn' ? '⚠' : ''}
-      </span>
-      <span
-        className={`${styles.text} ${hasDetail ? styles.expandable : ''}`}
-        onClick={hasDetail ? () => setExpanded(!expanded) : undefined}
-      >
-        {headline}
-        {hasDetail && <span className={styles.expandHint}>{expanded ? ' ▾' : ' ▸'}</span>}
-      </span>
-      {expanded && detail && <pre className={styles.detail}>{detail}</pre>}
-    </div>
-  );
-}
-
-----
-src/archon/ui/client/src/components/MarkdownBlock.tsx
-import { markdownToHtml } from '../utils/markdown';
-
-interface Props { content: string; className?: string; }
-
-export default function MarkdownBlock({ content, className }: Props) {
-  if (!content) return null;
-  return <div className={className} dangerouslySetInnerHTML={{ __html: markdownToHtml(content) }} />;
-}
-
-----
-src/archon/ui/client/src/components/LogEntryLine.module.css
-.line { padding: 1px 0; display: flex; flex-wrap: wrap; gap: 8px; }
-.line:hover { background: rgba(0,0,0,0.02); }
-.ts { color: var(--text-muted); flex-shrink: 0; user-select: none; }
-.event { flex-shrink: 0; min-width: 85px; font-weight: 500; }
-.text { color: var(--text-secondary); word-break: break-word; white-space: pre-wrap; }
-.expandable { cursor: pointer; }
-.expandable:hover { color: var(--text-primary); }
-.expandHint { color: var(--text-muted); font-size: 10px; }
-.detail {
-  width: 100%;
-  padding: 6px 8px; margin: 2px 0 4px 0;
-  background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 3px;
-  font-size: 11px; color: var(--text-secondary);
-  overflow-x: auto; white-space: pre-wrap; word-break: break-word;
-  max-height: 400px; overflow-y: auto;
-}
-
-----
-src/archon/ui/client/src/components/MilestoneCard.tsx
-import type { Milestone } from '../types';
-import { STATUS_COLORS } from '../utils/constants';
-import AttemptCard from './AttemptCard';
-import styles from './MilestoneCard.module.css';
-
-interface Props { milestone: Milestone; }
-
-export default function MilestoneCard({ milestone: m }: Props) {
-  return (
-    <div className={styles.card} style={{ borderLeftColor: STATUS_COLORS[m.status] || 'var(--border)' }}>
-      <div className={styles.header}>
-        <code className={styles.file}>{m.target?.file || '?'}</code>
-        <span className={styles.theorem}>{m.target?.theorem || '?'}</span>
-        <span className={styles.badge} style={{ color: STATUS_COLORS[m.status] }}>{m.status}</span>
-      </div>
-      {m.findings?.blocker && (
-        <div className={styles.blocker}>Blocker: {m.findings.blocker}</div>
-      )}
-      {m.findings?.key_lemmas_used && m.findings.key_lemmas_used.length > 0 && (
-        <div className={styles.lemmas}>Lemmas: {m.findings.key_lemmas_used.join(', ')}</div>
-      )}
-      {m.attempts && m.attempts.length > 0 && (
-        <div className={styles.attempts}>
-          {m.attempts.map((att, i) => <AttemptCard key={i} att={att} />)}
-        </div>
-      )}
-      {m.next_steps && (
-        <div className={styles.nextSteps}>Next: {m.next_steps}</div>
-      )}
-    </div>
-  );
-}
-
-----
-src/archon/ui/client/src/components/MilestoneCard.module.css
-.card {
-  border-left: 3px solid var(--border);
-  padding: 8px 12px;
-  background: var(--bg-secondary);
-  border-radius: 0 4px 4px 0;
-}
-.header { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.file { font-size: 11px; color: var(--text-muted); }
-.theorem { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-.badge { font-size: 11px; font-weight: 600; margin-left: auto; }
-.blocker { font-size: 12px; color: var(--red); margin-top: 4px; }
-.lemmas { font-size: 11px; color: var(--text-muted); margin-top: 2px; font-family: var(--font-mono); }
-.nextSteps { font-size: 12px; color: var(--text-secondary); margin-top: 4px; font-style: italic; }
-.attempts { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
-
-----
-src/archon/ui/client/src/hooks/useApi.ts
-import { useQuery } from '@tanstack/react-query';
-import type {
-  ProgressData, Task, LogEntry, AggregatedStats,
-  LogsResponse, SorryCount, Milestone, IterationMeta,
-} from '../types';
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`API ${res.status}`);
-  return res.json();
-}
-
-// --- Core ---
-export function useProject() {
-  return useQuery<{ name: string; path: string; archonPath: string }>({
-    queryKey: ['project'], queryFn: () => fetchJson('/api/project'), staleTime: Infinity,
-  });
-}
-
-export function useProgress() {
-  return useQuery<ProgressData>({ queryKey: ['progress'], queryFn: () => fetchJson('/api/progress'), refetchInterval: 10000 });
-}
-
-export function useTasks() {
-  return useQuery<Task[]>({ queryKey: ['tasks'], queryFn: () => fetchJson('/api/tasks'), refetchInterval: 10000 });
-}
-
-export function useSummary() {
-  return useQuery<AggregatedStats>({ queryKey: ['summary'], queryFn: () => fetchJson('/api/summary'), refetchInterval: 10000 });
-}
-
-export function useSorryCount() {
-  return useQuery<SorryCount>({ queryKey: ['sorryCount'], queryFn: () => fetchJson('/api/sorry-count'), refetchInterval: 10000 });
-}
-
-// --- Logs ---
-export function useLogs() {
-  return useQuery<LogsResponse>({ queryKey: ['logs'], queryFn: () => fetchJson('/api/logs'), refetchInterval: 3000, refetchIntervalInBackground: true });
-}
-
-export function useLogContent(filename: string) {
-  return useQuery<LogEntry[]>({
-    queryKey: ['logContent', filename],
-    queryFn: () => fetchJson(`/api/logs/${filename}`),
-    enabled: !!filename,
-    refetchInterval: false,
-  });
-}
-
-// --- Journal ---
-export interface JournalSession { id: string; hasMilestones: boolean; hasSummary: boolean; hasRecommendations: boolean }
-
-export function useJournalSessions() {
-  return useQuery<JournalSession[]>({ queryKey: ['journalSessions'], queryFn: () => fetchJson('/api/journal/sessions'), refetchInterval: 10000 });
-}
-
-export function useJournalMilestones(sessionId: string) {
-  return useQuery<Milestone[]>({
-    queryKey: ['journalMilestones', sessionId],
-    queryFn: () => fetchJson(`/api/journal/sessions/${sessionId}/milestones`),
-    enabled: !!sessionId,
-  });
-}
-
-export function useJournalSummary(sessionId: string) {
-  return useQuery<{ content: string }>({
-    queryKey: ['journalSummary', sessionId],
-    queryFn: () => fetchJson(`/api/journal/sessions/${sessionId}/summary`),
-    enabled: !!sessionId,
-  });
-}
-
-export function useJournalRecommendations(sessionId: string) {
-  return useQuery<{ content: string }>({
-    queryKey: ['journalRecs', sessionId],
-    queryFn: () => fetchJson(`/api/journal/sessions/${sessionId}/recommendations`),
-    enabled: !!sessionId,
-  });
-}
-
-export function useJournalAllMilestones() {
-  return useQuery<{ sessionId: string; milestones: Milestone[] }[]>({
-    queryKey: ['journalAllMilestones'],
-    queryFn: () => fetchJson('/api/journal/all-milestones'),
-    refetchInterval: 10000,
-  });
-}
-
-export function useProjectStatus() {
-  return useQuery<{ content: string }>({ queryKey: ['projectStatus'], queryFn: () => fetchJson('/api/journal/status'), refetchInterval: 30000 });
-}
-
-// --- Iterations ---
-export function useIterations() {
-  return useQuery<IterationMeta[]>({ queryKey: ['iterations'], queryFn: () => fetchJson('/api/iterations'), refetchInterval: 5000 });
-}
-
-export function useIteration(id: string) {
-  return useQuery<IterationMeta>({
-    queryKey: ['iteration', id],
-    queryFn: () => fetchJson(`/api/iterations/${id}`),
-    enabled: !!id,
-    refetchInterval: 5000,
-  });
-}
-
-export function useIterationProver(iterationId: string, file: string) {
-  return useQuery<LogEntry[]>({
-    queryKey: ['iterationProver', iterationId, file],
-    queryFn: () => fetchJson(`/api/iterations/${iterationId}/provers/${file}`),
-    enabled: !!iterationId && !!file,
-  });
-}
-
-----
-src/archon/ui/client/src/hooks/useLogStream.ts
-/**
- * useLogStream — manages log entry loading + real-time streaming for a selected file.
- *
- * Strategy:
- *   1. Immediately fetch full log via REST
- *   2. Open WebSocket for incremental updates
- *   3. If WS fails or disconnects, fall back to REST polling (3s)
- */
-import { useState, useEffect, useRef, useCallback } from 'react';
-import type { LogEntry } from '../types';
-
-const POLL_INTERVAL = 3000;
-
-interface UseLogStreamResult {
-  entries: LogEntry[];
-  streaming: boolean;
-}
-
-export function useLogStream(selectedFile: string): UseLogStreamResult {
-  const [entries, setEntries] = useState<LogEntry[]>([]);
-  const [streaming, setStreaming] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const entriesRef = useRef<LogEntry[]>([]);
-
-  // Keep ref in sync for use in callbacks
-  const updateEntries = useCallback((newEntries: LogEntry[]) => {
-    entriesRef.current = newEntries;
-    setEntries(newEntries);
-  }, []);
-
-  const appendEntries = useCallback((incoming: LogEntry[]) => {
-    const updated = [...entriesRef.current, ...incoming];
-    entriesRef.current = updated;
-    setEntries([...updated]);
-  }, []);
-
-  useEffect(() => {
-    if (!selectedFile) {
-      updateEntries([]);
-      setStreaming(false);
-      return;
-    }
-
-    updateEntries([]);
-    setStreaming(false);
-
-    let wsConnected = false;
-    let wsReady = false;
-    let cancelled = false;
-
-    // --- REST fetch (initial + poll fallback) ---
-    function fetchLog() {
-      return fetch(`/api/logs/${selectedFile}`)
-        .then(r => r.json())
-        .then((logs: LogEntry[]) => {
-          if (cancelled) return;
-          updateEntries(logs);
-          return logs.length;
-        })
-        .catch((e) => {
-          return -1;
-        });
-    }
-
-    function startPolling() {
-      if (pollRef.current) return;
-      pollRef.current = setInterval(async () => {
-        if (cancelled) return;
-        const count = await fetchLog();
-        if (count !== undefined) {
-        }
-      }, POLL_INTERVAL);
-    }
-
-    // --- WebSocket ---
-    const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/log-stream/${selectedFile}`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      if (cancelled) return;
-      wsConnected = true;
-    };
-
-    ws.onmessage = (ev) => {
-      if (cancelled) return;
-      try {
-        const raw = JSON.parse(ev.data);
-
-        // Server sends {type: 'ready'} to signal watcher is active
-        if (raw.type === 'ready') {
-          wsReady = true;
-          setStreaming(true);
-          // Load initial entries now that WS is watching
-          fetchLog();
-          return;
-        }
-
-        if (raw.type === 'error') {
-          return;
-        }
-
-        // Incremental entry
-        if (raw.ts) {
-          appendEntries([raw as LogEntry]);
-        }
-      } catch { /* skip non-JSON */ }
-    };
-
-    ws.onclose = (ev) => {
-      if (cancelled) return;
-      setStreaming(false);
-      if (!wsConnected || !wsReady) startPolling();
-    };
-
-    ws.onerror = () => {
-      if (cancelled) return;
-      setStreaming(false);
-      startPolling();
-    };
-
-    // Also fetch immediately via REST (don't wait for WS handshake)
-    fetchLog();
-
-    return () => {
-      cancelled = true;
-      ws.close();
-      wsRef.current = null;
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    };
-  }, [selectedFile, updateEntries, appendEntries]);
-
-  return { entries, streaming };
-}
-
-----
-src/archon/ui/client/src/views/LogViewer.module.css
-.root { display: flex; height: calc(100vh - 80px); gap: 0; }
-
-/* --- Sidebar --- */
-.sidebar {
-  width: 220px;
-  min-width: 180px;
-  border-right: 1px solid var(--border);
-  overflow-y: auto;
-  padding: 8px 0;
-  flex-shrink: 0;
-}
-
-.group { margin-bottom: 2px; }
-
-.groupHeader {
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 10px;
-  cursor: pointer;
-  font-size: 12px;
-  user-select: none;
-}
-.groupHeader:hover { background: var(--bg-secondary); }
-
-.toggle { font-size: 10px; color: var(--text-muted); width: 12px; flex-shrink: 0; }
-.groupTitle { font-weight: 600; font-size: 12px; }
-.groupStage { color: var(--text-secondary); font-size: 10px; }
-.groupMode { color: var(--purple); font-size: 10px; font-weight: 700; }
-.groupDone { color: var(--green); font-size: 10px; }
-.groupLive { color: var(--blue); font-size: 10px; animation: pulse 1.5s infinite; }
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-
-.groupBody { padding-left: 8px; }
-
-/* Phase summary */
-.metaBar {
-  display: flex; flex-wrap: wrap; gap: 6px;
-  padding: 4px 10px 6px;
-  font-size: 10px;
-  color: var(--text-secondary);
-}
-.phase { display: flex; align-items: center; gap: 3px; }
-.phaseDot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.phaseSecs { color: var(--text-muted); }
-
-.proverBar { display: flex; gap: 4px; font-size: 10px; font-weight: 600; }
-.proverTotal { color: var(--text-muted); font-weight: 400; }
-
-/* File list items */
-.fileItem {
-  display: flex; align-items: center; gap: 5px;
-  padding: 3px 10px 3px 18px;
-  cursor: pointer;
-  font-size: 11px;
-  color: var(--text-secondary);
-  border-radius: 3px;
-  margin: 0 4px;
-}
-.fileItem:hover { background: var(--bg-secondary); color: var(--text-primary); }
-.fileItemActive { background: rgba(3,102,214,0.08); color: var(--blue); font-weight: 500; }
-
-.fileStatus { font-size: 8px; flex-shrink: 0; }
-.fileRole { font-size: 10px; font-weight: 500; color: var(--text-muted); text-transform: capitalize; min-width: 40px; }
-.fileName { font-family: var(--font-mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.emptyHint { padding: 16px; color: var(--text-muted); font-size: 12px; text-align: center; }
-
-/* --- Main content --- */
-.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-
-.toolbar {
-  display: flex; align-items: center; gap: 10px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
-  font-size: 12px;
-  flex-shrink: 0;
-}
-.selectedLabel { font-weight: 500; font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
-.roleTag {
-  font-size: 11px; font-weight: 600; text-transform: uppercase;
-  padding: 1px 6px; border-radius: 3px;
-  background: rgba(0,0,0,0.04);
-}
-.live { color: var(--green); font-size: 11px; font-weight: 600; }
-.count { color: var(--text-muted); font-size: 11px; margin-left: auto; }
-
-.sessionSummary {
-  padding: 6px 12px;
-  font-size: 11px;
-  color: var(--text-secondary);
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.container { flex: 1; overflow-y: auto; padding: 4px 8px; }
-
-.summaryBlock {
-  margin-top: 8px;
-  padding: 8px 10px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 12px;
-}
-.summaryLabel {
-  font-weight: 600; font-size: 10px; text-transform: uppercase;
-  color: var(--text-muted);
-  margin-right: 8px;
-}
-.summaryText { color: var(--text-secondary); white-space: pre-wrap; }
-
-.emptyContent { padding: 32px; text-align: center; color: var(--text-muted); font-size: 12px; }
-
-----
-src/archon/ui/client/src/views/LogViewer.tsx
-import { useState, useEffect, useMemo } from 'react';
-import { useLogs } from '../hooks/useApi';
-import { useLogStream } from '../hooks/useLogStream';
-import type { LogEntry, LogGroup } from '../types';
-import { fmtDuration } from '../utils/format';
-import LogEntryLine from '../components/LogEntryLine';
-import styles from './LogViewer.module.css';
-
-// --- Sidebar components ---
-
-function PhaseTag({ label, status, secs }: { label: string; status?: string; secs?: number }) {
-  if (!status) return null;
-  const color = status === 'done' ? 'var(--green)' : status === 'running' ? 'var(--blue)' : status === 'error' ? 'var(--red)' : 'var(--text-muted)';
-  return (
-    <span className={styles.phase}>
-      <span className={styles.phaseDot} style={{ background: color }} />
-      {label}
-      {secs != null && <span className={styles.phaseSecs}>{fmtDuration(secs * 1000)}</span>}
-    </span>
-  );
-}
-
-function ProverStatusBar({ provers }: { provers?: Record<string, { file: string; status: string }> }) {
-  if (!provers) return null;
-  const entries = Object.values(provers);
-  const done = entries.filter(p => p.status === 'done').length;
-  const error = entries.filter(p => p.status === 'error').length;
-  const running = entries.filter(p => p.status === 'running').length;
-  return (
-    <div className={styles.proverBar}>
-      {done > 0 && <span style={{ color: 'var(--green)' }}>✓{done}</span>}
-      {running > 0 && <span style={{ color: 'var(--blue)' }}>●{running}</span>}
-      {error > 0 && <span style={{ color: 'var(--red)' }}>✗{error}</span>}
-      <span className={styles.proverTotal}>/{entries.length}</span>
-    </div>
-  );
-}
-
-function IterGroup({ group, selectedFile, onSelect }: {
-  group: LogGroup;
-  selectedFile: string;
-  onSelect: (path: string) => void;
-}) {
-  const hasSelected = group.files.some(f => f.path === selectedFile);
-  const [expanded, setExpanded] = useState(hasSelected);
-  const meta = group.meta;
-
-  useEffect(() => { if (hasSelected) setExpanded(true); }, [hasSelected]);
-
-  const isComplete = !!meta?.completedAt;
-
-  // Derive current active phase from status fields
-  const activePhase = !isComplete && meta
-    ? (meta.review?.status === 'running' ? 'review'
-      : meta.prover?.status === 'running' ? 'prover'
-      : meta.plan?.status === 'running' ? 'plan'
-      : meta.stage)
-    : undefined;
-
-  return (
-    <div className={styles.group}>
-      <div className={styles.groupHeader} onClick={() => setExpanded(!expanded)}>
-        <span className={styles.toggle}>{expanded ? '▾' : '▸'}</span>
-        <span className={styles.groupTitle}>
-          {meta?.iteration != null ? `Iter #${meta.iteration}` : group.id}
-        </span>
-        {meta?.mode === 'parallel' && <span className={styles.groupMode}>∥</span>}
-        {isComplete && <span className={styles.groupDone}>✓</span>}
-        {!isComplete && activePhase && <span className={styles.groupStage}>{activePhase}</span>}
-        {!isComplete && (meta?.prover?.status === 'running' || meta?.plan?.status === 'running' || meta?.review?.status === 'running') && <span className={styles.groupLive}>●</span>}
-      </div>
-
-      {expanded && (
-        <div className={styles.groupBody}>
-          {meta && (
-            <div className={styles.metaBar}>
-              <PhaseTag label="plan" status={meta.plan?.status} secs={meta.plan?.durationSecs} />
-              <PhaseTag label="prover" status={meta.prover?.status} secs={meta.prover?.durationSecs} />
-              <PhaseTag label="review" status={meta.review?.status} secs={meta.review?.durationSecs} />
-              <ProverStatusBar provers={meta.provers} />
-            </div>
-          )}
-
-          {group.files.map(f => {
-            const isProver = f.role === 'prover' && f.path.includes('/provers/');
-            const displayName = isProver
-              ? f.name.replace('.jsonl', '').replace(/_/g, '/')
-              : f.role || f.name.replace('.jsonl', '');
-            if (f.name === 'provers-combined.jsonl') return null;
-
-            const proverSlug = f.name.replace('.jsonl', '');
-            const proverStatus = isProver && meta?.provers?.[proverSlug]?.status;
-
-            return (
-              <div
-                key={f.path}
-                className={`${styles.fileItem} ${f.path === selectedFile ? styles.fileItemActive : ''}`}
-                onClick={() => onSelect(f.path)}
-              >
-                {isProver && (
-                  <span className={styles.fileStatus} style={{
-                    color: proverStatus === 'done' ? 'var(--green)' : proverStatus === 'running' ? 'var(--blue)' : proverStatus === 'error' ? 'var(--red)' : 'var(--text-muted)'
-                  }}>●</span>
-                )}
-                {!isProver && <span className={styles.fileRole}>{f.role}</span>}
-                <span className={styles.fileName}>{isProver ? displayName : ''}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// --- Role tag colors ---
-const ROLE_COLORS: Record<string, string> = {
-  plan: 'var(--blue)',
-  prover: 'var(--purple)',
-  review: 'var(--orange)',
-};
-
-// --- Run summary bar (from session_end entry) ---
-function RunSummaryBar({ entries }: { entries: LogEntry[] }) {
-  const sessionEnd = entries.find(e => e.event === 'session_end');
-  if (!sessionEnd) return null;
-  const model = sessionEnd.model_usage ? Object.keys(sessionEnd.model_usage)[0]?.replace(/^claude-/, '').replace(/-\d{8}$/, '') : '';
-  const parts: string[] = [];
-  if (model) parts.push(model);
-  if (sessionEnd.duration_ms) parts.push(fmtDuration(sessionEnd.duration_ms));
-  if (sessionEnd.num_turns) parts.push(`${sessionEnd.num_turns} turns`);
-  if (sessionEnd.total_cost_usd) parts.push(`$${sessionEnd.total_cost_usd.toFixed(2)}`);
-  if (sessionEnd.input_tokens) parts.push(`${(sessionEnd.input_tokens / 1000).toFixed(0)}K in`);
-  if (sessionEnd.output_tokens) parts.push(`${(sessionEnd.output_tokens / 1000).toFixed(0)}K out`);
-  if (!parts.length) return null;
-  return <div className={styles.sessionSummary}>{parts.join(' · ')}</div>;
-}
-
-// --- Main LogViewer ---
-
-export default function LogViewer() {
-  const [selectedFile, setSelectedFile] = useState('');
-  const [filter, setFilter] = useState('all');
-
-  const { data: logsData } = useLogs();
-  const { entries, streaming } = useLogStream(selectedFile);
-
-  // Derive the role of the selected file
-  const selectedRole = useMemo(() => {
-    if (!logsData || !selectedFile) return '';
-    for (const g of logsData.groups) {
-      const f = g.files.find(f => f.path === selectedFile);
-      if (f?.role) return f.role;
-    }
-    return '';
-  }, [logsData, selectedFile]);
-
-  // Auto-select first file
-  useEffect(() => {
-    if (!logsData || selectedFile) return;
-    if (logsData.groups.length > 0) {
-      const lastGroup = logsData.groups[logsData.groups.length - 1];
-      if (lastGroup.files.length > 0) { setSelectedFile(lastGroup.files[0].path); return; }
-    }
-    if (logsData.flat.length > 0) setSelectedFile(logsData.flat[0].path);
-  }, [logsData, selectedFile]);
-
-  // Filtered entries
-  const filtered = useMemo(() => {
-    if (filter === 'all') return entries;
-    return entries.filter(e => e.event === filter);
-  }, [entries, filter]);
-
-  // Summary from session_end (shown at top)
-  const sessionEnd = useMemo(() => entries.find(e => e.event === 'session_end'), [entries]);
-
-  const selectedLabel = selectedFile.replace(/\.jsonl$/, '').replace(/\//g, ' / ');
-
-  return (
-    <div className={styles.root}>
-      {/* Sidebar */}
-      <div className={styles.sidebar}>
-        {logsData?.groups.slice().reverse().map(g => (
-          <IterGroup key={g.id} group={g} selectedFile={selectedFile} onSelect={setSelectedFile} />
-        ))}
-
-        {logsData?.flat && logsData.flat.length > 0 && (
-          <div className={styles.group}>
-            <div className={styles.groupHeader}>
-              <span className={styles.groupTitle}>Legacy logs</span>
-            </div>
-            <div className={styles.groupBody}>
-              {logsData.flat.map(f => (
-                <div
-                  key={f.path}
-                  className={`${styles.fileItem} ${f.path === selectedFile ? styles.fileItemActive : ''}`}
-                  onClick={() => setSelectedFile(f.path)}
-                >
-                  <span className={styles.fileName}>{f.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {!logsData?.groups.length && !logsData?.flat.length && (
-          <div className={styles.emptyHint}>No logs yet</div>
-        )}
-      </div>
-
-      {/* Main content */}
-      <div className={styles.main}>
-        <div className={styles.toolbar}>
-          {selectedRole && (
-            <span className={styles.roleTag} style={{ color: ROLE_COLORS[selectedRole] || 'var(--text-muted)' }}>
-              {selectedRole}
-            </span>
-          )}
-          <span className={styles.selectedLabel}>{selectedLabel || 'Select a log'}</span>
-          <select value={filter} onChange={e => setFilter(e.target.value)}>
-            <option value="all">All</option>
-            <option value="shell">shell</option>
-            <option value="thinking">thinking</option>
-            <option value="tool_call">tool_call</option>
-            <option value="tool_result">tool_result</option>
-            <option value="text">text</option>
-            <option value="session_end">session_end</option>
-          </select>
-          {streaming && <span className={styles.live}>● live</span>}
-          <span className={styles.count}>{filtered.length} entries</span>
-        </div>
-
-        <RunSummaryBar entries={entries} />
-
-        <div className={styles.container}>
-          {/* Summary block at top */}
-          {sessionEnd?.summary && (
-            <div className={styles.summaryBlock}>
-              <span className={styles.summaryLabel}>Summary</span>
-              <span className={styles.summaryText}>{sessionEnd.summary}</span>
-            </div>
-          )}
-
-          {/* All entries, newest first */}
-          {filtered.filter(e => e.event !== 'session_end').slice().reverse().map((e, i) => (
-            <LogEntryLine key={`${entries.length}-${i}`} entry={e} />
-          ))}
-
-          {entries.length === 0 && selectedFile && (
-            <div className={styles.emptyContent}>No entries in this log file yet.</div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-----
-src/archon/ui/client/src/views/Overview.module.css
-.root { max-width: 960px; display: flex; flex-direction: column; gap: 20px; }
-
-.stages { font-family: var(--font-mono); font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.sep { color: var(--text-muted); }
-.current { color: var(--blue); font-weight: 600; }
-.done { color: var(--green); }
-.future { color: var(--text-muted); }
-
-.summaryLine { font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
-
-.sorrySection { font-family: var(--font-mono); font-size: 13px; display: flex; align-items: baseline; gap: 8px; }
-.sorryCount { color: var(--orange); font-weight: 600; }
-.sorryDetail { color: var(--text-muted); font-size: 12px; }
-.sorryDone { color: var(--green); font-weight: 600; }
-
-.section {}
-.sectionLabel { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
-.list { list-style: none; padding: 0; }
-.list li { padding: 3px 0; color: var(--text-secondary); font-size: 13px; }
-.checkDone { color: var(--green) !important; }
-
-.table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--font-mono); }
-.table th { text-align: left; padding: 6px 8px; color: var(--text-muted); font-weight: 500; border-bottom: 1px solid var(--border); }
-.table td { padding: 6px 8px; color: var(--text-secondary); border-bottom: 1px solid var(--bg-tertiary); }
-
-.taskList { display: flex; flex-direction: column; }
-.task { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 13px; }
-.taskStatus { flex-shrink: 0; font-size: 8px; }
-.taskTheorem { color: var(--text-primary); }
-.taskFile { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
-
-----
-src/archon/ui/client/src/views/Overview.tsx
-import { useProgress, useSummary, useSorryCount, useTasks } from '../hooks/useApi';
-import { fmtDuration, fmtTime } from '../utils/format';
-import { STATUS_COLORS } from '../utils/constants';
-import styles from './Overview.module.css';
-
-/** Render inline markdown: **bold** and `code` */
-function InlineMd({ text }: { text: string }) {
-  const html = text
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>');
-  return <span dangerouslySetInnerHTML={{ __html: html }} />;
-}
-
-const STAGES = ['init', 'autoformalize', 'prover', 'polish', 'COMPLETE'];
-
-export default function Overview() {
-  const { data: progress } = useProgress();
-  const { data: summary } = useSummary();
-  const { data: sorryData } = useSorryCount();
-  const { data: tasks } = useTasks();
-
-  const stage = progress?.stage || 'init';
-  const stageIdx = STAGES.indexOf(stage);
-
-  return (
-    <div className={styles.root}>
-      <div className={styles.stages}>
-        {STAGES.map((s, i) => (
-          <span key={s} className={i === stageIdx ? styles.current : i < stageIdx ? styles.done : styles.future}>
-            {i < stageIdx ? '✓ ' : ''}{s}
-          </span>
-        )).reduce<React.ReactNode[]>((acc, el, i) => {
-          if (i > 0) acc.push(<span key={`sep-${i}`} className={styles.sep}>→</span>);
-          acc.push(el);
-          return acc;
-        }, [])}
-      </div>
-
-      {sorryData && sorryData.total > 0 && (
-        <div className={styles.sorrySection}>
-          <span className={styles.sorryCount}>{sorryData.total} sorry</span>
-          <span className={styles.sorryDetail}>
-            {sorryData.files.map(f => `${f.file} (${f.count})`).join(', ')}
-          </span>
-        </div>
-      )}
-      {sorryData && sorryData.total === 0 && (
-        <div className={styles.sorrySection}>
-          <span className={styles.sorryDone}>0 sorry ✓</span>
-        </div>
-      )}
-
-      {summary && summary.sessionCount > 0 && (
-        <div className={styles.summaryLine}>
-          {summary.sessionCount} session{summary.sessionCount > 1 ? 's' : ''}
-          {' · '}{fmtDuration(summary.totalDuration)}
-        </div>
-      )}
-
-      {progress?.objectives && progress.objectives.length > 0 && (
-        <div className={styles.section}>
-          <div className={styles.sectionLabel}>Objectives</div>
-          <ul className={styles.list}>
-            {progress.objectives.map((o, i) => <li key={i}><InlineMd text={o} /></li>)}
-          </ul>
-        </div>
-      )}
-
-      {tasks && tasks.length > 0 && (
-        <div className={styles.section}>
-          <div className={styles.sectionLabel}>Tasks</div>
-          <div className={styles.taskList}>
-            {tasks.map(t => (
-              <div key={t.id} className={styles.task}>
-                <span className={styles.taskStatus} style={{ color: STATUS_COLORS[t.status] || 'var(--text-muted)' }}>●</span>
-                <span className={styles.taskTheorem}>{t.theorem}</span>
-                {t.file && <span className={styles.taskFile}>{t.file}</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {progress?.checklist && progress.checklist.length > 0 && (
-        <div className={styles.section}>
-          <div className={styles.sectionLabel}>Stages</div>
-          <ul className={styles.list}>
-            {progress.checklist.map((c, i) => (
-              <li key={i} className={c.done ? styles.checkDone : ''}>
-                {c.done ? '✓' : '○'} {c.label}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {summary?.sessions && summary.sessions.length > 0 && (
-        <div className={styles.section}>
-          <div className={styles.sectionLabel}>Sessions</div>
-          <table className={styles.table}>
-            <thead>
-              <tr><th>Time</th><th>Model</th><th>Duration</th><th>Turns</th></tr>
-            </thead>
-            <tbody>
-              {summary.sessions.slice().reverse().map((s, i) => (
-                <tr key={i}>
-                  <td>{fmtTime(s.timestamp)}</td>
-                  <td>{s.model}</td>
-                  <td>{fmtDuration(s.duration)}</td>
-                  <td>{s.turns}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-----
-src/archon/ui/client/src/views/Journal.module.css
-.root { max-width: 960px; display: flex; flex-direction: column; gap: 12px; }
-.empty { color: var(--text-muted); font-size: 13px; padding: 32px 0; }
-.empty code { background: var(--bg-tertiary); padding: 2px 6px; border-radius: 3px; font-size: 12px; }
-
-.sessionBar { display: flex; gap: 4px; flex-wrap: wrap; }
-.sessionBtn {
-  padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer;
-  border: 1px solid var(--border); border-radius: 4px;
-  background: var(--bg-primary); color: var(--text-secondary);
-  font-family: var(--font-mono);
-}
-.sessionBtn:hover { color: var(--text-primary); }
-.sessionBtnActive { background: var(--blue); color: #fff; border-color: var(--blue); }
-
-.tabs { display: flex; gap: 2px; }
-.tab {
-  padding: 5px 12px; font-size: 12px; cursor: pointer;
-  border: none; border-bottom: 2px solid transparent;
-  background: none; color: var(--text-muted);
-}
-.tab:hover { color: var(--text-primary); }
-.tabActive { color: var(--blue); border-bottom-color: var(--blue); }
-
-.content { display: flex; flex-direction: column; gap: 12px; }
-.section { display: flex; flex-direction: column; gap: 6px; }
-.sectionLabel { font-size: 11px; color: var(--text-muted); }
-
-.card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; overflow-x: auto; }
-
-/* Target aggregation card */
-.targetCard {
-  border-left: 3px solid var(--border);
-  padding: 8px 12px;
-  background: var(--bg-secondary);
-  border-radius: 0 4px 4px 0;
-}
-.targetHeader { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.targetFile { font-size: 11px; color: var(--text-muted); }
-.targetTheorem { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-.badge { font-size: 11px; font-weight: 600; margin-left: auto; }
-.targetMeta { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; }
-.attempts { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
-.sessionTag { font-size: 11px; color: var(--text-muted); margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
-.sessionFlow { color: var(--text-muted); margin-left: 4px; }
-
-/* Markdown */
-.markdown { font-size: 13px; line-height: 1.4; color: var(--text-secondary); }
-.markdown h2 { font-size: 14px; color: var(--text-primary); margin: 8px 0 2px; }
-.markdown h3 { font-size: 13px; color: var(--text-primary); margin: 6px 0 2px; }
-.markdown h4 { font-size: 12px; color: var(--text-primary); margin: 4px 0 2px; }
-.markdown strong { color: var(--text-primary); }
-.markdown code { background: var(--bg-tertiary); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
-.markdown ul { padding-left: 18px; margin: 2px 0; }
-.markdown li { margin: 1px 0; }
-.markdown table { border-collapse: collapse; margin: 6px 0; font-size: 12px; width: auto; }
-.markdown th, .markdown td { border: 1px solid var(--border); padding: 3px 8px; text-align: left; }
-.markdown th { background: var(--bg-tertiary); font-weight: 600; }
-.markdown pre { background: var(--bg-tertiary); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 12px; margin: 4px 0; }
-
-----
-src/archon/ui/client/src/views/Journal.tsx
-import { useState, useMemo } from 'react';
-import {
-  useJournalSessions, useJournalMilestones, useJournalSummary,
-  useJournalRecommendations, useJournalAllMilestones,
-} from '../hooks/useApi';
-import { aggregateTargets } from '../utils/aggregate';
-import { STATUS_COLORS } from '../utils/constants';
-import MilestoneCard from '../components/MilestoneCard';
-import AttemptCard from '../components/AttemptCard';
-import MarkdownBlock from '../components/MarkdownBlock';
-import styles from './Journal.module.css';
-
-type Tab = 'milestones' | 'targets';
-
-export default function Journal() {
-  const { data: sessions } = useJournalSessions();
-  const [activeSession, setActiveSession] = useState('');
-  const [tab, setTab] = useState<Tab>('milestones');
-
-  // --- Milestones tab data (per-session) ---
-  const currentSession = activeSession || (sessions?.length ? sessions[sessions.length - 1].id : '');
-  const { data: milestones } = useJournalMilestones(currentSession);
-  const { data: summaryData } = useJournalSummary(currentSession);
-  const { data: recsData } = useJournalRecommendations(currentSession);
-
-  // --- Targets tab data (cross-session) ---
-  const { data: allMilestoneData } = useJournalAllMilestones();
-
-  const allAggregated = useMemo(() => {
-    if (!allMilestoneData?.length) return [];
-    return aggregateTargets(allMilestoneData);
-  }, [allMilestoneData]);
-
-  const hasAnySessions = !!sessions?.length;
-  const currentMeta = sessions?.find(s => s.id === currentSession);
-  const hasSessionContent = currentMeta?.hasMilestones || currentMeta?.hasSummary || currentMeta?.hasRecommendations;
-
-  if (!hasAnySessions && !allMilestoneData?.length) {
-    return (
-      <div className={styles.empty}>
-        <p><strong>No review sessions yet.</strong></p>
-        <p>Journal data is generated by the review agent after each prover iteration.</p>
-        <p>Make sure <code>archon-loop.sh</code> is running without <code>--no-review</code>, or run <code>./review.sh /path/to/project</code> manually.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className={styles.root}>
-      {/* Top-level tabs: Milestones (per-session) | Targets (global) */}
-      <div className={styles.tabs}>
-        <button className={`${styles.tab} ${tab === 'milestones' ? styles.tabActive : ''}`} onClick={() => setTab('milestones')}>Milestones</button>
-        <button className={`${styles.tab} ${tab === 'targets' ? styles.tabActive : ''}`} onClick={() => setTab('targets')}>Targets</button>
-      </div>
-
-      {/* ── Milestones tab ── */}
-      {tab === 'milestones' && (
-        <div className={styles.content}>
-          {/* Session selector */}
-          {hasAnySessions && (
-            <div className={styles.sessionBar}>
-              {sessions!.map(s => (
-                <button key={s.id}
-                  className={`${styles.sessionBtn} ${(currentSession === s.id) ? styles.sessionBtnActive : ''}`}
-                  onClick={() => setActiveSession(s.id)}>
-                  {s.id.replace('session_', 'Session #')}
-                  {!s.hasMilestones && !s.hasSummary && <span style={{ opacity: 0.4 }}> ○</span>}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {!hasSessionContent && (
-            <div className={styles.empty}>
-              <p><strong>Session {currentSession.replace('session_', '#')} — waiting for review data</strong></p>
-              <p>The review agent creates milestones, summary, and recommendations after analyzing prover results.</p>
-            </div>
-          )}
-
-          {/* Milestones */}
-          {milestones && milestones.length > 0 && (
-            <div className={styles.section}>
-              <div className={styles.sectionLabel}>Milestones</div>
-              {milestones.map((m, i) => <MilestoneCard key={i} milestone={m} />)}
-            </div>
-          )}
-
-          {/* Summary */}
-          {summaryData?.content && (
-            <div className={styles.section}>
-              <div className={styles.sectionLabel}>Summary</div>
-              <div className={styles.card}><MarkdownBlock content={summaryData.content} className={styles.markdown} /></div>
-            </div>
-          )}
-
-          {/* Recommendations */}
-          {recsData?.content && (
-            <div className={styles.section}>
-              <div className={styles.sectionLabel}>Recommendations</div>
-              <div className={styles.card}><MarkdownBlock content={recsData.content} className={styles.markdown} /></div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Targets tab (global, independent of session selection) ── */}
-      {tab === 'targets' && (
-        <div className={styles.content}>
-          {allAggregated.length === 0 && (
-            <div className={styles.empty}>No targets found across any session</div>
-          )}
-          {allAggregated.map((t, i) => (
-            <div key={i} className={styles.targetCard} style={{ borderLeftColor: STATUS_COLORS[t.status] || 'var(--border)' }}>
-              <div className={styles.targetHeader}>
-                <code className={styles.targetFile}>{t.file}</code>
-                <span className={styles.targetTheorem}>{t.theorem}</span>
-                <span className={styles.badge} style={{ color: STATUS_COLORS[t.status] }}>{t.status}</span>
-              </div>
-              <div className={styles.targetMeta}>
-                {t.sessions.length} session{t.sessions.length > 1 ? 's' : ''} · {t.totalAttempts} attempt{t.totalAttempts !== 1 ? 's' : ''}
-                {t.sessions.length > 1 && (
-                  <span className={styles.sessionFlow}>
-                    {t.sessions.map(s => s.replace('session_', '#')).join(' → ')}
-                  </span>
-                )}
-              </div>
-              {t.milestones.map((m, mi) => (
-                <div key={mi}>
-                  {t.sessions.length > 1 && (
-                    <div className={styles.sessionTag}>
-                      {(m as any).sessionId?.replace('session_', '#') || `#${mi + 1}`}
-                      {' · '}
-                      <span style={{ color: STATUS_COLORS[m.status] }}>{m.status}</span>
-                    </div>
-                  )}
-                  {m.attempts && m.attempts.length > 0 && (
-                    <div className={styles.attempts}>
-                      {m.attempts.map((att, ai) => <AttemptCard key={ai} att={att} />)}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 ----
 src/archon/.archon-src/settings.local.json
 {
@@ -5696,605 +2997,6 @@ src/archon/.archon-src/skills/.claude-plugin/marketplace.json
 }
 
 ----
-src/archon/prompts/prover-polish.md
-# Prover — Polish Stage
-
-You are the prover agent in the polish stage. Your job: verify, clean, and improve compiled proofs.
-
-## Workflow
-
-1. Read `PROGRESS.md` for your current objectives (read only — do not edit it)
-2. Read `task_pending.md` for context from prior sessions
-3. Check your `.lean` file for `/- USER: ... -/` comments for file-specific hints
-4. Verify compilation and confirm absence of `sorry`, `axiom`, and other escape hatches
-5. Perform code quality improvements:
-   - Golf proofs for brevity and clarity (`/lean4:golf`)
-   - Refactor to leverage Mathlib (`/lean4:refactor`)
-   - Extract reusable helpers from long proofs
-6. Verify compilation after each change
-7. Write results to `task_results/<your_file>.md`
-
-**Write permissions**: You may only write to your assigned `.lean` file(s) and your `task_results/<file>.md`. Do NOT edit `PROGRESS.md`, `task_pending.md`, or other agents' files.
-
-## Constraints
-
-- Do NOT introduce new `sorry` or axioms
-- Do NOT modify initial definitions or final theorem/lemma statements
-- Proof bodies and intermediate helpers may be freely improved
-- Keep edits minimal: do not delete comments or change labels
-- Verify compilation after each change
-
-## Logging
-
-Record polish work in `task_results/<your_file>.md` (see `prover-prover.md` for the full format). Add a new `### Attempt N` entry for each optimization or issue found.
-
-----
-src/archon/prompts/prover-prover.md
-# Prover — Prover Stage
-
-You are the prover agent in the proving stage. Your job: fill `sorry` placeholders with complete proofs.
-
-## Workflow
-
-1. Read `PROGRESS.md` for your current objectives (read only — do not edit it)
-2. Read `task_pending.md` for context on your assigned file — prior attempts, dead ends, relevant lemmas
-3. Check your `.lean` file for `/- USER: ... -/` comments — these are file-specific hints from the user
-4. Before writing Lean code, you **MUST** consult the relevant blueprint chapter. Blueprints contain mathematical proof sketches; your formal proof must align with them. When stuck, re-reading the blueprint is often the fastest path forward.
-5. Replace `sorry` with Lean proofs, pushing as far as possible
-6. **Always save partial progress in the code.** If you cannot fully prove a sorry, replace it with your best attempt — commented-out proof steps, helper lemmas, partial `by` blocks with remaining `sorry` at the stuck point. The file must still compile (use scoped `sorry` for the stuck parts), but your work must be visible in the code for the next agent to continue from. NEVER revert to the original bare `sorry` — that wastes all your work.
-7. Write results to `task_results/<your_file>.md` — what you tried, what worked, what's stuck, next steps
-
-**Write permissions**: You may only write to your assigned `.lean` file(s) and your `task_results/<file>.md`. Do NOT edit `PROGRESS.md`, `task_pending.md`, `task_done.md`, or other agents' files.
-
-## Avoid Early Termination
-
-- Do not abandon a proof prematurely
-- Many complex problems require thousands of lines of Lean code
-- Do not stop and leave a sorry simply because the proof is long
-- Task difficulty is NOT a valid reason to leave `sorry` placeholders
-- Only modify the proof corresponding to the task; leave other proofs/declarations untouched
-- **Decomposition**: Act like a mathematician — systematically break the proof into smaller sub-problems (following the blueprint's lemma structure if available: L1, L2, L3, …) and solve each one individually until the entire goal is closed
-
-## Task Completion Criteria
-
-Your task is NOT complete until ALL of:
-1. Every `sorry` has been replaced with a complete proof
-2. Zero axioms introduced
-3. The file compiles successfully with no errors
-
-If you encounter obstacles:
-- Break the problem into smaller subgoals
-- Search for relevant Mathlib lemmas more thoroughly
-- Prove missing helper lemmas yourself
-- Try alternative proof strategies
-- Consult the informal proof / blueprint for guidance
-- Use Web Search to find paper proofs when Mathlib lacks a theorem
-
-### When infrastructure is missing or the current route is too hard
-
-Do NOT just report "Mathlib lacks X" and stop. Before giving up on a sorry, you must try to find an alternative yourself:
-
-1. **Use the informal agent** (`.claude/tools/archon-informal-agent.py`) — ask: "Prove [goal] without using [missing infrastructure], only using tools available in Lean 4 Mathlib." Even an imperfect sketch is valuable.
-2. **Try the alternative** — if the informal agent gives you a route, attempt to formalize it.
-3. **If you still can't solve it**, save what you learned for the plan agent:
-   - Write the informal agent's alternative proof sketch to `informal/<theorem_name>.md`
-   - In your `task_results/<file>.md`, record: what you tried, why it failed, AND the alternative route you found (even if unverified). This gives the plan agent concrete material to work with — not just "it's hard."
-   - A prover that reports "I couldn't prove X, but here's an alternative approach via Y that might work because Z" is far more useful than one that just says "infrastructure missing."
-
-## Proof Style
-
-- **Never modify working proofs** — if a declaration has no `sorry` and compiles, do not touch its proof body
-- Keep edits minimal: do not delete comments or change labels
-- Do not add unrelated declarations
-- **Initial definitions and final theorem/lemma statements are frozen** — do not modify them. If a statement appears wrong, keep the file compilable (use scoped `sorry`), explain why in `task_pending.md`, and let the plan agent decide.
-- **Intermediate helper lemmas you introduced** may be modified if they turn out to be incorrect or need adjustment.
-- Add concise, informative comments above helper lemmas to make later reuse easy
-
-## Search Protocol
-
-Follow the search tool priority and query guidance in the lean4 skill reference (`references/lean-lsp-tools-api.md`). Key points:
-
-1. `lean_local_search` first
-2. `lean_leansearch` for semantic search — **describe the mathematical content**, not just the name
-3. `lean_loogle` for simple type patterns only
-4. Never use local file search (find, grep) to locate Mathlib theorems
-
-## Missing Lemmas & Impossibility
-
-Follow the lean4 skill reference (`references/sorry-filling.md`) for:
-- **When Mathlib lacks a theorem**: bypass or implement yourself. Web Search for published papers. Never leave a `sorry` just because Mathlib doesn't have it.
-- **Distinguish impossibility from difficulty**: technical difficulty → keep trying. Mathematical impossibility → immediately backtrack and document why.
-
-## Logging
-
-Write your results to `task_results/<your_file>.md`. Use the file name from your assigned `.lean` file (e.g., if you own `Algebra/WLocal.lean`, write to `task_results/Algebra_WLocal.lean.md`).
-
-**Format:**
-
-```markdown
-# Algebra/WLocal.lean
-
-## wLocal_iff (line 45)
-### Attempt 1
-- **Approach:** Direct case split on maximal ideals
-- **Result:** FAILED — needed IsLocalRing instance not available
-- **Dead end:** Do not try direct case split without IsLocalRing
-
-### Attempt 2
-- **Approach:** Use Stacks 0A31, characterize via bijection on spectra
-- **Result:** RESOLVED
-- **Key insight:** Mathlib's PrimeSpectrum.comap_injective bridges the gap
-
-## helper_bijective (line 78)
-### Attempt 1
-- **Approach:** Function.Bijective.comp
-- **Result:** IN PROGRESS — stuck on surjectivity
-- **Next step:** Try PrimeSpectrum.range_comap_of_surjective
-- **Relevant lemmas found:** PrimeSpectrum.comap_surjective
-```
-
-**Rules:**
-1. One section per theorem/lemma in your file
-2. Each attempt records: approach, result (RESOLVED / FAILED / IN PROGRESS), dead-end warnings or next steps
-3. Log negative search results (e.g., "Searched 'projective module infinite rank' — nothing in Mathlib")
-4. The plan agent collects these files and merges them into `task_pending.md` / `task_done.md`
-
-**Read-only references:** Read `task_pending.md` for prior context on your file. Read `task_done.md` if the current problem resembles a completed one. Do not write to either.
-
-## Summary Pipeline
-
-1. Read `task_pending.md` and `task_done.md` for context from prior sessions
-2. Read the informal proof / blueprint to understand the proof strategy and lemma decomposition
-3. Introduce helper lemmas (matching the blueprint's structure) in the `.lean` file
-4. Replace `sorry` placeholders with complete proofs, ensuring the file compiles without errors
-5. Do not modify initial definitions or final theorem/lemma statements. Only fill in proof bodies and add helper lemmas. Intermediate helpers you introduced may be corrected.
-6. Use Mathlib theorems when possible. Use Web Search when Mathlib lacks referenced results
-7. Rely on Lean LSP for diagnostics; use `lake env lean <file>` sparingly for final checks
-8. Log all explorations in `task_results/<your_file>.md`
-
-## End-of-session handoff
-
-Before you stop (or when you are done with this round of work):
-
-1. Write to `task_results/<your_file>.md` with:
-   - Current result (IN PROGRESS / FAILED) and what you tried
-   - Any Mathlib lemmas you discovered that are relevant
-   - Concrete next step for the next session
-   - Dead-end warnings for approaches that won't work
-2. Save all file changes (ensure compilation passes, using scoped `sorry` if needed)
-
-----
-src/archon/prompts/init.md
-# Init Stage
-
-The script launches you interactively so you can talk to the user and set up the project.
-
-**Important:** Before answering any user question about the project state, always re-check the actual files in the directory first. Do not answer from memory — list files, read them, then respond.
-
-## Step 1: Detect project state
-
-Check two things:
-1. **Lean project**: Does `lakefile.lean` or `lakefile.toml` exist in the current directory?
-2. **Natural-language content**: Do any `.md`, `.tex`, `.txt`, or other informal proof/blueprint files exist?
-
-## Step 2: Act based on state
-
-**No Lean project AND no natural-language content:**
-- Prompt the user: "No Lean project or mathematical content found. Please provide either natural-language content (informal proofs, problem statements, blueprint) or point to an existing Lean project."
-- Wait for the user to provide input, then continue to the appropriate case below.
-
-**No Lean project BUT natural-language content exists:**
-- Ask the user which versions of Lean and Mathlib they want to use.
-- After receiving instructions, configure the Lean project (`lake init`, set up `lakefile.lean`, add Mathlib dependency, run `lake update`).
-- Advance `PROGRESS.md` current stage to `autoformalize` with the objective: translate the natural-language content into Lean declarations.
-
-**Lean project already exists:**
-- Determine the next stage by checking the `.lean` files:
-  - If `.lean` files have no theorem/lemma declarations yet (only imports or empty) → `autoformalize`
-  - If `.lean` files have declarations with `sorry` → `prover`
-  - If `.lean` files compile with no `sorry` → `polish` or `COMPLETE`
-- Advance `PROGRESS.md` to the determined stage.
-- Write objectives in `PROGRESS.md`: **one numbered objective per file, listing every file that needs work**. Do not batch or group — one per file.
-- Keep all stages in the Stages list. Only mark `init` as `[x]`. Mark stages between init and the current stage as `[x]` only if they are truly complete. If autoformalize was not needed (declarations already exist), mark it `[x]`. If it was needed but not done, leave it `[ ]` and set it as the current stage.
-
-Example (Lean project with sorries, autoformalize already done):
-```markdown
-## Current Stage
-prover
-
-## Stages
-- [x] init
-- [x] autoformalize
-- [ ] prover
-- [ ] polish
-```
-
-Example (Lean project with empty files, needs autoformalization):
-```markdown
-## Current Stage
-autoformalize
-
-## Stages
-- [x] init
-- [ ] autoformalize
-- [ ] prover
-- [ ] polish
-```
-
-## Counting sorry
-
-Use the bundled sorry analyzer script:
-
-```bash
-${LEAN4_PYTHON_BIN:-python3} "$LEAN4_SCRIPTS/sorry_analyzer.py" . --format=summary
-```
-
-For per-file detail:
-```bash
-${LEAN4_PYTHON_BIN:-python3} "$LEAN4_SCRIPTS/sorry_analyzer.py" . --format=markdown
-```
-
-## Updating PROGRESS.md stages
-
-When advancing the stage, mark completed stages with `[x]` and the current stage with `[ ]`:
-
-```markdown
-## Stages
-- [x] init
-- [ ] autoformalize
-- [ ] prover
-- [ ] polish
-```
-
-Use [x] for stages that are truly complete or that you intentionally skip.
-
-## After init
-
-When you advance the stage out of `init`, tell the user: "Init complete. Exit Claude Code with `/exit` or `Ctrl+D`. Then start the loop with `./archon-loop.sh`."
-
-----
-src/archon/prompts/prover-autoformalize.md
-# Prover — Autoformalize Stage
-
-You are the prover agent in the autoformalize stage.
-
-## Your Job
-
-1. Read informal proofs from the blueprint
-2. Construct initial file structure: split the proof into modules, define theorem signatures, place `sorry` placeholders at each proof obligation
-3. Ensure the file compiles with sorries in place
-
-## Workflow
-
-1. Read `PROGRESS.md` for your current objectives (read only — do not edit it)
-2. Read `task_pending.md` for context from prior sessions
-3. Check your `.lean` file for `/- USER: ... -/` comments for file-specific hints
-4. Read the informal proof / blueprint to understand the proof strategy and lemma decomposition
-5. Introduce declarations matching the blueprint's structure in the `.lean` file
-6. Place `sorry` at each proof obligation
-7. Verify the file compiles
-8. Write results to `task_results/<your_file>.md`
-
-**Write permissions**: You may only write to your assigned `.lean` file(s) and your `task_results/<file>.md`. Do NOT edit `PROGRESS.md`, `task_pending.md`, or other agents' files.
-
-## Proof Style
-
-- **Never modify working proofs** — if a declaration has no `sorry` and compiles, do not touch its proof body unless repeated verification shows the proof is semantically wrong.
-
-## Naming and Mathlib
-
-- Prefer using existing Mathlib lemmas/definitions
-- Do not reintroduce concepts already in Mathlib
-- If the informal proof's notion matches Mathlib's, lean on the Mathlib definition and prove equivalence/instances as needed
-- Use mathematically meaningful names; avoid problem-specific or ad-hoc names unless already present in the skeleton
-
-----
-src/archon/prompts/plan.md
-# Plan Agent
-
-You are the plan agent. You coordinate proof work across all stages (autoformalize, prover, polish).
-
-## Your Job
-
-1. Read `USER_HINTS.md` — incorporate user hints into your planning, then clear the file after acting
-2. Read `task_results/` — collect prover results from each `<file>.md`, then merge findings into `task_pending.md` (update attempts) and `task_done.md` (migrate resolved theorems). Clear processed result files.
-3. Read `task_pending.md` and `task_done.md` to recover context — do not repeat documented dead ends
-4. Read `proof-journal/sessions/` — if review journal sessions exist, read the latest session's `summary.md` and `recommendations.md` for the review agent's analysis. Also read `PROJECT_STATUS.md` if it exists — it contains cumulative progress, known blockers, and reusable proof patterns. Use these findings when setting objectives.
-5. Evaluate each task: is it completed, can it be completed, why not?
-6. Verify prover reports independently (check sorry count + compilation) — do not trust self-reports
-7. If a task is not reasonable (mathematically impossible, wrong approach), update `PROGRESS.md` with a corrected plan
-8. Prepare rich informal content for the prover (see below)
-9. Set clear, self-contained objectives for the next prover iteration
-10. Do NOT write proofs, edit `.lean` files, or fill sorries yourself. If you find yourself starting to write or edit proofs, stop immediately and return to your supervisory role.
-
-**Write permissions**: You may write to `PROGRESS.md`, `task_pending.md`, `task_done.md`, and `USER_HINTS.md` (to clear it). You must NOT edit `.lean` files or `task_results/` files.
-
-## Providing Informal Content to the Prover
-
-The prover performs significantly better when given rich informal mathematical guidance. Before assigning a task, you must ensure the prover has access to the relevant informal proof or proof sketch.
-
-**How to provide informal content:**
-
-- **Short hints** (a few sentences): Write directly in `PROGRESS.md` under the task objectives. Example: "Key idea: use Bolzano-Weierstrass to extract a convergent subsequence, then show the limit satisfies the property."
-
-- **Medium content** (a paragraph or two): Write as comments in the corresponding `.lean` file, above the declaration with `sorry`. Use `/- ... -/` block comments.
-
-- **Long content** (a full proof sketch, paper summary, or multi-step construction): Write into a separate markdown file (e.g., `informal/theorem_name.md`) and record the path in `PROGRESS.md` so the prover can find it.
-
-**No matter which method you choose, always record in `PROGRESS.md`** where the informal content is located, so the prover can obtain it without searching.
-
-**When the blueprint is vague or only gives a reference** (e.g., "by Hiblot 1975" without proof details):
-1. Use `.claude/tools/archon-informal-agent.py` to generate an informal proof sketch from an external model
-2. Use Web Search to find the referenced paper and extract the key proof steps
-3. Write the result into a file and record the path in `PROGRESS.md`
-4. Do this **before** assigning the task to the prover — don't send the prover in blind
-
-**When a prover fails and the gap is informal-to-formal translation:**
-
-If the prover reports that a proof is conceptually clear but hard to formalize (e.g., the standard approach uses infrastructure Mathlib lacks, or the proof steps don't map cleanly to available lemmas), use the informal agent to generate an **alternative proof** — one that routes around the missing infrastructure:
-
-1. Run `.claude/tools/archon-informal-agent.py` with a prompt describing the goal AND the constraint (e.g., "Prove X without using residue calculus, only tools available in Lean 4 Mathlib")
-2. Write the full re-routed informal proof as a `/- ... -/` block comment above the declaration in the `.lean` file, or in a separate file (e.g., `informal/theorem_name.md`). **Do not put long proofs in `task_pending.md`** — that file must stay brief and navigable.
-3. In `task_pending.md`, record only a one-line pointer: "Re-routed informal proof at `informal/theorem_name.md`" or "See block comment above declaration in `Core.lean:156`"
-4. Record in `PROGRESS.md` that the informal proof was re-routed and where to find it
-4. Reassign the task to the prover with the new informal proof
-
-Pre-generating complete informal proofs eliminates wasted computation from repeated re-derivation during proving cycles.
-
-## Recognizing Prover Failure Modes
-
-### "Mathlib doesn't have it" — Missing Infrastructure
-The #1 failure mode. The prover reports a sorry is unfillable because Mathlib lacks the infrastructure, then stops.
-
-**Your response:** This is YOUR job to solve, not the prover's. Never just pass it back with "try harder." You must actively find an alternative proof route:
-
-1. **Use the informal agent** (`.claude/tools/archon-informal-agent.py`) — ask it: "Prove X without using [the missing infrastructure]. Only use tools available in Lean 4 Mathlib." Get a concrete alternative proof sketch.
-2. **Use Web Search** — find the referenced paper or alternative proofs of the same result that avoid the missing infrastructure.
-3. **Decompose differently** — break the problem into sub-lemmas where each sub-lemma only needs available infrastructure. The prover can implement Mathlib-level lemmas if you give it clear, self-contained goals.
-4. **Check `mathlib-unavailable-theorems.md`** — if the missing infrastructure is in a known-unavailable domain, don't waste time looking for it. Focus on detours.
-
-Write the re-routed informal proof into a `/- ... -/` comment or `informal/` file, then reassign the task to the prover with the new approach. Do not reassign without providing an alternative.
-
-### Wrong Construction — Building on a Flawed Foundation
-The prover chose a wrong construction (e.g., wrong ring, wrong topology) and the sorry is mathematically unfillable, but the prover keeps trying instead of backtracking. Look for comments like "MATHEMATICAL GAP", "UNFILLABLE", or "this does not satisfy property X."
-
-**Your response:** Instruct the prover to revert immediately. Check the blueprint for an alternative construction. If the blueprint is vague, use informal_agent + Web Search to find the correct approach. Update `PROGRESS.md` with the new plan.
-
-### Not Using Web Search
-The prover searches only within Mathlib and gives up when it finds nothing, even when the blueprint references a specific paper.
-
-**Your response:** Explicitly instruct: "Use Web Search to find [paper name/arXiv ID], read the proof, decompose it into sub-lemmas, and formalize step by step."
-
-### Early Stopping on Hard Problems
-The prover stops and reports "done" when the remaining sorry requires significant effort. It frames this as "reasonable" incompleteness.
-
-**Your response:** Reject the report. Break the hard problem into smaller sub-goals and assign them one at a time. Frame it as: "Formalize just sub-lemma L1 from the blueprint, then report back."
-
-## Assessing Prover Progress
-
-### Three Indicators
-| Indicator | Meaning |
-|-----------|---------|
-| Sorry count (decreasing) | Direct progress — a sorry was filled |
-| Code line count (increasing) | Infrastructure building — helpers, definitions |
-| Blueprint coverage | Which sub-lemmas from the blueprint are formalized |
-
-Line count increasing + sorry count unchanged = the prover is building infrastructure. This is real progress.
-Line count unchanged + sorry count unchanged = zero progress.
-
-### Deep Stuck vs Early Abandonment
-| Pattern | Diagnosis | Response |
-|---------|-----------|----------|
-| 800+ lines, 2-3 sorries left | Deep stuck — needs math hint or infrastructure | Provide informal guidance via informal_agent, suggest specific decomposition |
-| <200 lines, sorry remaining | Early abandonment — prover gave up too quickly | Push harder: break into sub-goals, provide richer informal content |
-
-## Verification
-
-After a prover reports completion, always verify independently:
-1. Check sorry count: `${LEAN4_PYTHON_BIN:-python3} "$LEAN4_SCRIPTS/sorry_analyzer.py" <file> --format=summary`
-2. Check compilation: `lean_diagnostic_messages(file)` or `lake env lean <file>`
-3. Check axioms: no new `axiom` declarations
-
-Never advance to the next stage based solely on the prover's word.
-
-## Decomposition Strategy
-
-When a prover is stuck on a large theorem:
-1. Read the blueprint to identify sub-lemma structure (L1, L2, L3, ...)
-2. Check if the blueprint is detailed enough — if not, expand it first (using informal_agent / Web Search)
-3. Assign one sub-lemma at a time: "Fill sorry for L1 only"
-4. After L1 is done, verify, then assign L2
-5. Record each sub-lemma's status in `PROGRESS.md`
-
-## Context Management
-
-Each prover iteration starts with fresh context. The prover does not remember previous iterations.
-
-- Provide **self-contained** objectives in `PROGRESS.md` — include all context the prover needs
-- When a prover gets stuck on the same failure across multiple iterations, it is re-discovering the same dead end. Change the approach entirely — do not just repeat "try again"
-- Document dead ends in `PROGRESS.md` so the prover doesn't repeat them
-
-## Multi-Agent Coordination
-
-Provers run in parallel — one agent per file. Your objectives must be structured accordingly.
-
-### Writing objectives
-
-Number each objective clearly (1, 2, 3, ...). Each objective maps to **exactly one file**. Never assign two objectives to the same file.
-
-```markdown
-## Current Objectives
-
-1. **Core.lean** — Fill sorry in `filter_convergence` (line 156). Key idea: use Filter.HasBasis, see informal proof in informal/filter.md.
-2. **Measure.lean** — Fill sorry in `sigma_finite_restrict` (line 45). Use MeasureTheory.Measure.restrict_apply with finite spanning sets.
-3. **Topology.lean** — Fill sorry in `compact_embedding` (line 203). Straightforward from CompactSpace + isClosedEmbedding.
-```
-
-### Balancing difficulty
-
-Estimate relative difficulty of each objective. If one file has significantly harder sorries than others, consider decomposing it into helper lemmas first (in a prior plan iteration) so the prover agent has smaller, more tractable goals. The goal is for all agents to finish around the same time.
-
-### Agent count
-
-- **Agent count = file count**: if 24 files need work, write 24 objectives — one per file. Do not artificially batch or limit the number of objectives. The shell script handles parallelism.
-- If an experiment is restarted, check compilation status of every target `.lean` file before planning. Prioritize files that still have `sorry` or compilation errors. Do not redo completed work.
-
-## Stage Transitions
-
-When all objectives in the current stage are met, advance `PROGRESS.md` to the next stage:
-- `autoformalize` → `prover` (when all statements are formalized)
-- `prover` → `polish` (when all sorries are filled and verified)
-- `polish` → `COMPLETE` (when proofs are clean and compile)
-
-----
-src/archon/prompts/review.md
-# Review Agent — Post-Session Proof Journal + Analysis
-
-You are the review agent. Your job is to: (1) analyze the most recent prover session with fine-grained detail, (2) produce a structured proof journal, (3) update project status, and (4) write recommendations for the next plan iteration.
-
-**Do NOT modify any .lean files. Do NOT run Lean compilation. ONLY read logs, analyze, and write journal/status files.**
-
-## Step 1: Identify Context
-
-1. Check `.archon/proof-journal/sessions/` — count existing session folders to determine the current session number.
-2. Run `find ${PROJECT_PATH} -name '*.lean' -not -path '*/.lake/*' -not -path '*/lake-packages/*' | xargs grep -c 'sorry' 2>/dev/null | grep -v ':0$' | awk -F: '{s+=$2} END {print s}'` for the current sorry count.
-3. Run `git diff HEAD~1 --stat` to see what changed.
-
-## Step 2: Read Pre-processed Attempt Data (MANDATORY)
-
-**READ `.archon/proof-journal/current_session/attempts_raw.jsonl` COMPLETELY.** If this file does not exist or is empty, report it and proceed with what you can gather from task_results.
-
-The file contains:
-
-- Line 1: Summary stats (`type: "summary"` — total edits, goal checks, errors, files edited)
-- Remaining lines: One event per tool call — edits, goal states, errors, lemma searches, builds
-
-**For each `code_change` event**: Record the actual code that was tried (old_text → new_text).
-**For each `goal_state` event**: Record the Lean goal at that point.
-**For each `diagnostics` event**: Record the Lean errors.
-**For each `build` event**: Record whether it succeeded or failed.
-
-This is your PRIMARY data source. Task result files are supplementary.
-
-## Step 3: Read Recent History
-
-If previous session folders exist in `.archon/proof-journal/sessions/`, read `summary.md` from the **last 2 sessions**. Also read `.archon/PROJECT_STATUS.md` if it exists.
-
-## Step 4: Write Proof Journal
-
-Create the session folder and write two files:
-
-```bash
-mkdir -p .archon/proof-journal/sessions/session_<N>
-```
-
-### File A: `.archon/proof-journal/sessions/session_<N>/summary.md`
-
-Must include:
-- Session metadata (number, sorry count before/after, targets attempted)
-- For EACH target attempted:
-  - **Every significant attempt** with: tactic/code tried, Lean error received, goal state at that point
-  - What was learned from each failed attempt
-  - For solved targets: the final proof structure with key lemmas
-- Key findings / proof patterns discovered
-- Recommendations for next session
-
-### File B: `.archon/proof-journal/sessions/session_<N>/milestones.jsonl`
-
-Each line MUST follow this JSON format — one entry per target theorem:
-
-```json
-{
-  "timestamp": "ISO-8601",
-  "status": "solved|partial|blocked|not_started",
-  "target": {
-    "file": "path/to/File.lean",
-    "theorem": "theorem_name"
-  },
-  "session": {
-    "id": "session_N",
-    "model": "model-name"
-  },
-  "findings": {
-    "blocker": "description if blocked",
-    "key_lemmas_used": ["lemma1", "lemma2"]
-  },
-  "attempts": [
-    {
-      "attempt": 1,
-      "strategy": "what was tried",
-      "code_tried": "actual Lean code or tactic",
-      "lean_error": "actual error message if failed",
-      "goal_before": "the goal state before this attempt",
-      "goal_after": "the goal state after this attempt",
-      "result": "success|failed|partial",
-      "insight": "what was learned from this attempt"
-    }
-  ],
-  "next_steps": "..."
-}
-```
-
-**CRITICAL**: The `attempts` array must reflect ACTUAL attempts from the pre-processed data:
-- If `attempts_raw.jsonl` shows 5 edits to a file, there should be multiple attempts recorded
-- Each attempt must include `code_tried` (from edit events) and `lean_error` (from diagnostic events)
-- Do NOT summarize multiple attempts as "tried various approaches" — list each one
-
-### File C: `.archon/proof-journal/sessions/session_<N>/recommendations.md`
-
-Write concrete recommendations for the next plan agent iteration:
-- Which targets are closest to completion and should be prioritized
-- Which approaches showed promise but need more work
-- Which targets are blocked and why (the plan agent should NOT assign these)
-- Any reusable proof patterns discovered
-
-## Step 5: Update PROJECT_STATUS.md
-
-Update (or create) `.archon/PROJECT_STATUS.md`:
-
-```markdown
-# Project Status
-
-## Overall Progress
-- **Total sorry**: <N>
-- **Solved this session**: <list with file + theorem>
-- **Partial**: <list with progress summary>
-- **Blocked**: <list with reasons>
-- **Untouched**: <list>
-
-## Knowledge Base
-### Proof Patterns (reusable across targets)
-- <pattern name>: <description + key lemmas>
-
-### Known Blockers (do not retry)
-- <target>: <reason>
-
-## Last Updated
-<ISO timestamp>
-```
-
-## Step 6: Self-Validation
-
-After writing all files, validate your output by checking:
-- [ ] milestones.jsonl has valid JSON on every line
-- [ ] Each milestone has `target.file`, `target.theorem`, `status`
-- [ ] Each non-blocked milestone has at least 1 attempt with `code_tried` or `strategy`
-- [ ] Number of attempts per milestone is proportional to edits in `attempts_raw.jsonl`
-- [ ] summary.md includes specific code/errors, not just high-level summaries
-- [ ] recommendations.md includes actionable next steps
-
-## Permissions
-
-You may write to:
-- `.archon/proof-journal/sessions/session_<N>/` (summary.md, milestones.jsonl, recommendations.md)
-- `.archon/PROJECT_STATUS.md`
-
-You must NOT write to:
-- Any `.lean` files
-- `.archon/PROGRESS.md` (plan agent's responsibility)
-- `.archon/task_pending.md` or `.archon/task_done.md` (plan agent's responsibility)
-
-----
 src/archon/commands/orchestrate.py
 """Launch Archon in orchestrator-scheduled mode."""
 
@@ -6732,6 +3434,7 @@ src/archon/commands/dashboard.py
 from __future__ import annotations
 
 import atexit
+import hashlib
 import os
 import platform
 import shutil
@@ -6774,28 +3477,13 @@ def _find_free_port(start: int, attempts: int = 10) -> int | None:
     return None
 
 
-def _try_free_port(port: int) -> None:
-    """Best-effort attempt to free a port."""
-    if _has("fuser"):
-        subprocess.run(["fuser", "-k", f"{port}/tcp"], capture_output=True)
-        time.sleep(1)
-    elif _has("lsof"):
-        r = subprocess.run(
-            ["lsof", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
-            capture_output=True, text=True,
-        )
-        pids = r.stdout.strip().split()
-        for pid in pids:
-            if pid.isdigit():
-                try:
-                    os.kill(int(pid), signal.SIGTERM)
-                except OSError:
-                    pass
-        time.sleep(1)
+def _project_key(project_path: str) -> str:
+    """Return a short hash key for the project path (matches bash shasum -a 256)."""
+    return hashlib.sha256(project_path.encode()).hexdigest()[:16]
 
 
 def _kill_old_server(pid_file: Path) -> None:
-    """Stop a previously running dashboard server."""
+    """Stop a previously running dashboard server for this project."""
     if not pid_file.exists():
         return
     try:
@@ -6807,10 +3495,11 @@ def _kill_old_server(pid_file: Path) -> None:
     try:
         os.kill(old_pid, 0)  # check alive
     except OSError:
+        log.warn("Removing stale UI instance record for this project")
         pid_file.unlink(missing_ok=True)
         return
 
-    log.step(f"Stopping previous UI server (PID {old_pid})")
+    log.step(f"Stopping previous UI server for this project (PID {old_pid})...")
     try:
         os.kill(old_pid, signal.SIGTERM)
     except OSError:
@@ -6822,6 +3511,19 @@ def _kill_old_server(pid_file: Path) -> None:
             time.sleep(1)
         except OSError:
             break
+    else:
+        # Still alive after 5s — force kill
+        log.warn(f"PID {old_pid} did not exit after SIGTERM, forcing stop...")
+        try:
+            os.kill(old_pid, signal.SIGKILL)
+        except OSError:
+            pass
+        for _ in range(3):
+            try:
+                os.kill(old_pid, 0)
+                time.sleep(1)
+            except OSError:
+                break
 
     pid_file.unlink(missing_ok=True)
 
@@ -6943,7 +3645,12 @@ def dashboard(
 
     server_dir = ui_dir / "server"
     client_dir = ui_dir / "client"
-    pid_file = ui_dir / ".archon-ui.pid"
+
+    # Per-project PID file (matches bash: .archon-ui/<hash>.pid)
+    instance_dir = ui_dir / ".archon-ui"
+    instance_dir.mkdir(parents=True, exist_ok=True)
+    project_key = _project_key(str(resolved))
+    pid_file = instance_dir / f"{project_key}.pid"
 
     log.key_value({
         "Project": str(resolved),
@@ -6970,28 +3677,20 @@ def dashboard(
         log.success("Build complete")
         return
 
-    # Port handling
+    # Kill old server for THIS project first, before checking port conflicts
+    _kill_old_server(pid_file)
+
+    # Only after project-local cleanup do we resolve external port conflicts
     if _port_in_use(port):
-        log.warn(f"Port {port} is already in use")
+        log.warn(f"Port {port} is already in use by another process or project")
         free_port = _find_free_port(port)
         if free_port:
             port = free_port
             log.panel(f"Port changed! Using [bold]{port}[/bold] instead", style="yellow")
         else:
             log.error(f"Could not find a free port in range {port + 1}–{port + 11}")
+            log.step("Free the current port or pass an explicit --port")
             raise typer.Exit(1)
-
-    # Kill old server
-    _kill_old_server(pid_file)
-
-    # Post-cleanup: if port still occupied, try to free it
-    if _port_in_use(port):
-        log.warn(f"Port {port} still occupied — attempting to free")
-        _try_free_port(port)
-        if _port_in_use(port):
-            log.error(f"Port {port} still in use — free it manually")
-            raise typer.Exit(1)
-        log.success(f"Port {port} freed")
 
     # Start server
     server_cmd = [
@@ -7003,7 +3702,7 @@ def dashboard(
         log.header("Dev Mode")
         log.key_value({
             "Dashboard": f"http://localhost:{port}",
-            "Vite dev": "http://localhost:5173",
+            "Vite dev": "http://localhost:5173 (auto-opens)",
         })
         log.info("Press Ctrl+C to stop\n")
 
@@ -7027,18 +3726,14 @@ def dashboard(
             _cleanup_dev()
         return
 
-    # Production mode
-    server_proc = subprocess.Popen(
-        server_cmd, cwd=server_dir,
-        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-    )
+    # Production mode — don't suppress stdout (matches bash)
+    server_proc = subprocess.Popen(server_cmd, cwd=server_dir)
     pid_file.write_text(str(server_proc.pid))
 
     # Wait a moment to see if it crashes
     time.sleep(1)
     if server_proc.poll() is not None:
-        stderr = server_proc.stderr.read().decode() if server_proc.stderr else ""
-        log.error(f"Server failed to start: {stderr.strip()}")
+        log.error("Server failed to start")
         pid_file.unlink(missing_ok=True)
         raise typer.Exit(1)
 
@@ -7046,12 +3741,14 @@ def dashboard(
     log.header("Archon Dashboard")
     log.key_value({
         "Dashboard": base_url,
+        "Overview": f"{base_url}/",
         "Logs": f"{base_url}/logs",
         "Journal": f"{base_url}/journal",
         "Project": str(resolved),
         "PID": str(server_proc.pid),
+        "PID file": str(pid_file),
     })
-    log.step(f"Stop:  kill {server_proc.pid}")
+    log.step(f"Stop:  kill {server_proc.pid}  (or: kill $(cat {pid_file}))")
 
     if open_browser:
         _open_browser(base_url)
@@ -7667,6 +4364,49 @@ def _file_slug(rel: str) -> str:
     return rel.replace("/", "_").replace(os.sep, "_").removesuffix(".lean")
 
 
+# ── snapshot helpers ──────────────────────────────────────────────────
+
+
+def _snapshot_baseline(file_path: Path, snap_dir: Path) -> None:
+    """Copy a .lean file as baseline.lean into the given snapshot directory."""
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copy2(file_path, snap_dir / "baseline.lean")
+    except OSError:
+        pass
+
+
+def _set_prover_env(
+    snap_dir: Path | str,
+    prover_jsonl: Path | str,
+    project_path: Path | str,
+    serial_mode: bool = False,
+) -> dict[str, str]:
+    """Set ARCHON_SNAPSHOT_DIR/PROVER_JSONL/PROJECT_PATH env vars and return the old values."""
+    old = {}
+    env_vars = {
+        "ARCHON_SNAPSHOT_DIR": str(snap_dir),
+        "ARCHON_PROVER_JSONL": str(prover_jsonl),
+        "ARCHON_PROJECT_PATH": str(project_path),
+    }
+    if serial_mode:
+        env_vars["ARCHON_SERIAL_MODE"] = "true"
+
+    for k, v in env_vars.items():
+        old[k] = os.environ.get(k)
+        os.environ[k] = v
+    return old
+
+
+def _unset_prover_env(old: dict[str, str]) -> None:
+    """Restore or unset ARCHON env vars from saved old values."""
+    for k, v in old.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+
+
 # ── preflight ─────────────────────────────────────────────────────────
 
 
@@ -7727,9 +4467,27 @@ def _run_single_prover(
     cwd: Path,
     log_base: Path,
     verbose_logs: bool,
+    snap_dir: Path | None = None,
+    project_path: Path | None = None,
 ) -> bool:
-    """Entry point for a single prover (may run in subprocess)."""
-    return run_claude(prompt, cwd=cwd, log_base=log_base, verbose_logs=verbose_logs)
+    """Entry point for a single prover (may run in subprocess).
+
+    Sets ARCHON env vars for the duration of the prover run.
+    """
+    if snap_dir is not None and project_path is not None:
+        old_env = _set_prover_env(
+            snap_dir=snap_dir,
+            prover_jsonl=Path(str(log_base) + ".jsonl"),
+            project_path=project_path,
+        )
+    else:
+        old_env = None
+
+    try:
+        return run_claude(prompt, cwd=cwd, log_base=log_base, verbose_logs=verbose_logs)
+    finally:
+        if old_env is not None:
+            _unset_prover_env(old_env)
 
 
 def _run_parallel_provers(
@@ -7757,6 +4515,13 @@ def _run_parallel_provers(
 
     file_count = len(sorry_files)
 
+    # Dry run check before anything else
+    if dry_run:
+        for f in sorry_files:
+            rel = _relpath(f, project_path)
+            log.step(f"[dry-run] Prover: {rel}")
+        return
+
     # Single file → run serial
     if file_count == 1:
         rel = _relpath(sorry_files[0], project_path)
@@ -7766,20 +4531,28 @@ def _run_parallel_provers(
         prover_log = iter_dir / "provers" / slug
         write_meta(iter_meta, **{f"provers.{slug}.file": rel, f"provers.{slug}.status": "running"})
 
-        prompt = build_prover_prompt(project_name, project_path, state_dir, stage)
-        ok = run_claude(prompt, cwd=project_path, log_base=prover_log, verbose_logs=verbose_logs)
+        # Snapshot baseline
+        snap_dir = iter_dir / "snapshots" / slug
+        _snapshot_baseline(sorry_files[0], snap_dir)
+
+        # Set env vars and run
+        old_env = _set_prover_env(
+            snap_dir=snap_dir,
+            prover_jsonl=Path(str(prover_log) + ".jsonl"),
+            project_path=project_path,
+        )
+        try:
+            prompt = build_prover_prompt(project_name, project_path, state_dir, stage)
+            ok = run_claude(prompt, cwd=project_path, log_base=prover_log, verbose_logs=verbose_logs)
+        finally:
+            _unset_prover_env(old_env)
+
         write_meta(iter_meta, **{f"provers.{slug}.status": "done" if ok else "error"})
         return
 
     log.info(f"Found {file_count} file(s) — launching parallel provers (max {max_parallel} concurrent)")
 
     base_prompt = build_parallel_prover_prompt(project_name, project_path, state_dir, stage)
-
-    if dry_run:
-        for f in sorry_files:
-            rel = _relpath(f, project_path)
-            log.step(f"[dry-run] Prover: {rel}")
-        return
 
     log.info(f"Watch progress:")
     log.step(f"tail -f {iter_dir}/provers/*.jsonl")
@@ -7794,11 +4567,21 @@ def _run_parallel_provers(
             prover_log = iter_dir / "provers" / slug
             prompt = f"{base_prompt}\nYour assigned file: {rel}"
 
+            # Snapshot baseline
+            snap_dir = iter_dir / "snapshots" / slug
+            _snapshot_baseline(f, snap_dir)
+
             log.step(f"Starting prover for {rel} (log: provers/{slug}.jsonl)")
             write_meta(iter_meta, **{f"provers.{slug}.file": rel, f"provers.{slug}.status": "running"})
 
             future = pool.submit(
-                _run_single_prover, prompt, project_path, prover_log, verbose_logs,
+                _run_single_prover,
+                prompt,
+                project_path,
+                prover_log,
+                verbose_logs,
+                snap_dir,
+                project_path,
             )
             futures[future] = (rel, slug)
 
@@ -8039,7 +4822,28 @@ def loop(
                 print(prover_prompt)
             else:
                 prover_log = iter_dir / "prover"
-                run_claude(prover_prompt, cwd=resolved, log_base=prover_log, verbose_logs=verbose_logs)
+
+                # Snapshot baseline for all target files in serial mode
+                sorry_files = parse_objective_files(progress_file, resolved)
+                if sorry_files:
+                    for sf in sorry_files:
+                        srel = _relpath(sf, resolved)
+                        sslug = _file_slug(srel)
+                        ssnap = iter_dir / "snapshots" / sslug
+                        _snapshot_baseline(sf, ssnap)
+
+                # Serial prover edits multiple files — set ARCHON_SNAPSHOT_DIR
+                # to the snapshots root; snapshot.py derives the subdir
+                old_env = _set_prover_env(
+                    snap_dir=iter_dir / "snapshots",
+                    prover_jsonl=Path(str(prover_log) + ".jsonl"),
+                    project_path=resolved,
+                    serial_mode=True,
+                )
+                try:
+                    run_claude(prover_prompt, cwd=resolved, log_base=prover_log, verbose_logs=verbose_logs)
+                finally:
+                    _unset_prover_env(old_env)
 
         prover_secs = int(time.monotonic() - prover_start)
         log.info(f"Prover phase finished. ({prover_secs}s)")
@@ -8081,6 +4885,110 @@ def loop(
     data = cost_summary(log_dir)
     if data:
         log.cost_table("Loop totals", data.totals_dict(), data.model_rows() or None)
+----
+src/archon/commands/prove.py
+import subprocess
+import re
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+import typer
+
+from archon import log
+from archon.types import Stage 
+
+def prove(
+    statement: str = typer.Argument(
+        ..., 
+        help="The mathematical statement you want to prove (e.g., 'For all x, y in R, (x+y)^2 = ...')"
+    ),
+    project_path: str = typer.Argument(
+        None,
+        help="Path where you want to create the proof workspace. Otherwise, a new directory named `proof_<slug>_<timestamp>` will be created in the current directory.",
+    ),
+    max_iterations: int = typer.Option(
+        10, "--max-iterations", "-m", help="Max plan→prover→review cycles.",
+    ),
+    max_parallel: int = typer.Option(
+        8, "--max-parallel", help="Max concurrent provers in parallel mode.",
+    ),
+    stage: Optional[Stage] = typer.Option(
+        None, "--stage", "-s",
+        help="Force a stage instead of reading from PROGRESS.md.",
+    ),
+    parallel: bool = typer.Option(
+        True, "--parallel/--serial",
+        help="Run provers in parallel (one per file) or serially.",
+    ),
+    verbose_logs: bool = typer.Option(
+        False, "--verbose-logs",
+        help="Save raw Claude stream events to .raw.jsonl.",
+    ),
+    no_review: bool = typer.Option(
+        False, "--no-review",
+        help="Skip review phase after each iteration.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Print prompts without launching Claude.",
+    ),
+) -> None:
+    """
+    Launch a proof loop for a given statement.
+    """
+    log.header("archon prove")
+
+    if not project_path:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        clean_words = re.sub(r'[^a-zA-Z0-9\s]', '', statement).split()[:5]
+        slug = "_".join(clean_words).lower()
+        dir_name = f"proof_{slug}_{timestamp}"
+        project_path = Path.cwd() / dir_name
+        project_path.mkdir(parents=True, exist_ok=True)
+    else: 
+        project_path = Path(project_path).resolve()
+    
+    if project_path.exists() and any(project_path.iterdir()):
+        log.error(f"Provided path {project_path} is not empty. Please provide an empty or non-existent directory.")
+        raise typer.Exit(1)
+
+    project_path.mkdir(parents=True, exist_ok=True)
+    statement_file = project_path / "statement.md"
+    statement_file.write_text(statement, encoding="utf-8")
+    log.success(f"Created workspace at {project_path}")
+    log.step(f"Saved statement to statement.md")
+
+    log.phase(1, "Running archon init")
+    try:
+        subprocess.run(["archon", "init", str(project_path)], check=True)
+    except subprocess.CalledProcessError:
+        log.error("Failed during archon init. Aborting.")
+        raise typer.Exit(1)
+
+    log.phase(2, "Starting archon loop")
+    
+    loop_cmd = ["archon", "loop", str(project_path)]
+    loop_cmd.extend(["--max-iterations", str(max_iterations)])
+    loop_cmd.extend(["--max-parallel", str(max_parallel)])
+    
+    if stage:
+        loop_cmd.extend(["--stage", stage.value])
+    if not parallel:
+        loop_cmd.append("--serial")
+    if verbose_logs:
+        loop_cmd.append("--verbose-logs")
+    if no_review:
+        loop_cmd.append("--no-review")
+    if dry_run:
+        loop_cmd.append("--dry-run")
+
+    try:
+        subprocess.run(loop_cmd, check=True)
+    except subprocess.CalledProcessError:
+        log.error("Failed during archon loop.")
+        raise typer.Exit(1)
+        
+    log.success(f"Proof process finished for: {dir_name}")
 ----
 src/archon/commands/init.py
 """Initialize a new Archon project."""
@@ -8420,6 +5328,8 @@ def init(
     Creates .archon/ inside the target project with state files, copied
     prompts, skills, MCP server, and launches Claude for initial setup.
 
+    You can add context files (pdf, markdown, etc.) directly in the project directory, and Claude will be able to read them during the init session.
+
     [bold]Examples of use:[/bold]
       [cyan]archon init .[/cyan]                          Initialize the current directory.
       [cyan]archon init /path/to/lean-project[/cyan]      Initialize an existing external project.
@@ -8686,7 +5596,7 @@ def _check_project_claude(project_path: Path) -> list[tuple[str, str, str]]:
         rows.append(("informal agent", "warning", "not found"))
 
     # MCP config
-    mcp_json = claude_dir / ".mcp.json"
+    mcp_json = project_path / ".mcp.json"
     if mcp_json.exists():
         data = _read_json(mcp_json)
         servers = list(data.get("mcpServers", {}).keys())
