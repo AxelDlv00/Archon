@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import hashlib
 import os
 import platform
 import shutil
@@ -45,28 +46,13 @@ def _find_free_port(start: int, attempts: int = 10) -> int | None:
     return None
 
 
-def _try_free_port(port: int) -> None:
-    """Best-effort attempt to free a port."""
-    if _has("fuser"):
-        subprocess.run(["fuser", "-k", f"{port}/tcp"], capture_output=True)
-        time.sleep(1)
-    elif _has("lsof"):
-        r = subprocess.run(
-            ["lsof", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
-            capture_output=True, text=True,
-        )
-        pids = r.stdout.strip().split()
-        for pid in pids:
-            if pid.isdigit():
-                try:
-                    os.kill(int(pid), signal.SIGTERM)
-                except OSError:
-                    pass
-        time.sleep(1)
+def _project_key(project_path: str) -> str:
+    """Return a short hash key for the project path (matches bash shasum -a 256)."""
+    return hashlib.sha256(project_path.encode()).hexdigest()[:16]
 
 
 def _kill_old_server(pid_file: Path) -> None:
-    """Stop a previously running dashboard server."""
+    """Stop a previously running dashboard server for this project."""
     if not pid_file.exists():
         return
     try:
@@ -78,10 +64,11 @@ def _kill_old_server(pid_file: Path) -> None:
     try:
         os.kill(old_pid, 0)  # check alive
     except OSError:
+        log.warn("Removing stale UI instance record for this project")
         pid_file.unlink(missing_ok=True)
         return
 
-    log.step(f"Stopping previous UI server (PID {old_pid})")
+    log.step(f"Stopping previous UI server for this project (PID {old_pid})...")
     try:
         os.kill(old_pid, signal.SIGTERM)
     except OSError:
@@ -93,6 +80,19 @@ def _kill_old_server(pid_file: Path) -> None:
             time.sleep(1)
         except OSError:
             break
+    else:
+        # Still alive after 5s — force kill
+        log.warn(f"PID {old_pid} did not exit after SIGTERM, forcing stop...")
+        try:
+            os.kill(old_pid, signal.SIGKILL)
+        except OSError:
+            pass
+        for _ in range(3):
+            try:
+                os.kill(old_pid, 0)
+                time.sleep(1)
+            except OSError:
+                break
 
     pid_file.unlink(missing_ok=True)
 
@@ -214,7 +214,12 @@ def dashboard(
 
     server_dir = ui_dir / "server"
     client_dir = ui_dir / "client"
-    pid_file = ui_dir / ".archon-ui.pid"
+
+    # Per-project PID file (matches bash: .archon-ui/<hash>.pid)
+    instance_dir = ui_dir / ".archon-ui"
+    instance_dir.mkdir(parents=True, exist_ok=True)
+    project_key = _project_key(str(resolved))
+    pid_file = instance_dir / f"{project_key}.pid"
 
     log.key_value({
         "Project": str(resolved),
@@ -241,28 +246,20 @@ def dashboard(
         log.success("Build complete")
         return
 
-    # Port handling
+    # Kill old server for THIS project first, before checking port conflicts
+    _kill_old_server(pid_file)
+
+    # Only after project-local cleanup do we resolve external port conflicts
     if _port_in_use(port):
-        log.warn(f"Port {port} is already in use")
+        log.warn(f"Port {port} is already in use by another process or project")
         free_port = _find_free_port(port)
         if free_port:
             port = free_port
             log.panel(f"Port changed! Using [bold]{port}[/bold] instead", style="yellow")
         else:
             log.error(f"Could not find a free port in range {port + 1}–{port + 11}")
+            log.step("Free the current port or pass an explicit --port")
             raise typer.Exit(1)
-
-    # Kill old server
-    _kill_old_server(pid_file)
-
-    # Post-cleanup: if port still occupied, try to free it
-    if _port_in_use(port):
-        log.warn(f"Port {port} still occupied — attempting to free")
-        _try_free_port(port)
-        if _port_in_use(port):
-            log.error(f"Port {port} still in use — free it manually")
-            raise typer.Exit(1)
-        log.success(f"Port {port} freed")
 
     # Start server
     server_cmd = [
@@ -274,7 +271,7 @@ def dashboard(
         log.header("Dev Mode")
         log.key_value({
             "Dashboard": f"http://localhost:{port}",
-            "Vite dev": "http://localhost:5173",
+            "Vite dev": "http://localhost:5173 (auto-opens)",
         })
         log.info("Press Ctrl+C to stop\n")
 
@@ -298,18 +295,14 @@ def dashboard(
             _cleanup_dev()
         return
 
-    # Production mode
-    server_proc = subprocess.Popen(
-        server_cmd, cwd=server_dir,
-        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-    )
+    # Production mode — don't suppress stdout (matches bash)
+    server_proc = subprocess.Popen(server_cmd, cwd=server_dir)
     pid_file.write_text(str(server_proc.pid))
 
     # Wait a moment to see if it crashes
     time.sleep(1)
     if server_proc.poll() is not None:
-        stderr = server_proc.stderr.read().decode() if server_proc.stderr else ""
-        log.error(f"Server failed to start: {stderr.strip()}")
+        log.error("Server failed to start")
         pid_file.unlink(missing_ok=True)
         raise typer.Exit(1)
 
@@ -317,12 +310,14 @@ def dashboard(
     log.header("Archon Dashboard")
     log.key_value({
         "Dashboard": base_url,
+        "Overview": f"{base_url}/",
         "Logs": f"{base_url}/logs",
         "Journal": f"{base_url}/journal",
         "Project": str(resolved),
         "PID": str(server_proc.pid),
+        "PID file": str(pid_file),
     })
-    log.step(f"Stop:  kill {server_proc.pid}")
+    log.step(f"Stop:  kill {server_proc.pid}  (or: kill $(cat {pid_file}))")
 
     if open_browser:
         _open_browser(base_url)
