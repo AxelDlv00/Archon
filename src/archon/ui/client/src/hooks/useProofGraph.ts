@@ -10,7 +10,6 @@ export interface GraphDeclaration {
   id: string; kind: string; name: string; file: string; line: number;
   hasSorry: boolean; sorryCount: number; signature: string;
   totalAttempts: number; latestMilestoneStatus?: string; milestoneSessions: string[]; blocker?: string;
-  body?: string; // present in snapshot responses
 }
 
 export interface GraphEdge { from: string; to: string; }
@@ -26,6 +25,8 @@ export interface TimelinePoint {
   iteration: string; timestamp?: string; totalSorry: number;
   perFile: Record<string, number>;
   perDeclaration: Record<string, { hasSorry: boolean; sorryCount: number }>;
+  /** Declaration IDs whose body actually changed compared to previous iteration */
+  changedDeclarations: string[];
 }
 
 export interface NodeMilestoneInfo {
@@ -58,15 +59,16 @@ export function useProofGraphTimeline() {
   });
 }
 
+/** Snapshot at a specific iteration. keepPreviousData prevents graph flash on switch. */
 export function useProofGraphSnapshot(iteration: string) {
   return useQuery<DeclarationsResponse>({
     queryKey: ['proofgraphSnapshot', iteration],
     queryFn: () => fetchJson(`/api/proofgraph/snapshot/${iteration}`),
     enabled: !!iteration,
+    placeholderData: (prev) => prev, // keep showing previous data while loading
   });
 }
 
-/** Node detail — iteration-aware: passes iteration to server for snapshot code + filtered milestones */
 export function useProofGraphNodeDetail(file: string, name: string, iteration?: string) {
   const url = iteration
     ? `/api/proofgraph/node/${encodeURIComponent(file)}/${encodeURIComponent(name)}?iteration=${encodeURIComponent(iteration)}`
