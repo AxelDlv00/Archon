@@ -188,7 +188,8 @@ function findDeclAt(lp: string, pp: string, iter: string, file: string, name: st
 // ── Prover log reading ────────────────────────────────────────────────
 
 /** Relevant event types to surface in the UI */
-const LOG_EVENTS = new Set(['thinking', 'text', 'tool_call', 'tool_result', 'code_snapshot', 'session_end']);
+// const LOG_EVENTS = new Set(['thinking', 'text', 'tool_call', 'tool_result', 'code_snapshot', 'session_end']);
+const LOG_EVENTS = new Set(['thinking']);
 
 /**
  * Read prover log for a file slug at a given iteration.
