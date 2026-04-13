@@ -25,7 +25,6 @@ export interface TimelinePoint {
   iteration: string; timestamp?: string; totalSorry: number;
   perFile: Record<string, number>;
   perDeclaration: Record<string, { hasSorry: boolean; sorryCount: number }>;
-  /** Declaration IDs whose body actually changed compared to previous iteration */
   changedDeclarations: string[];
 }
 
@@ -43,6 +42,45 @@ export interface NodeDetail {
   milestones: NodeMilestoneInfo[];
 }
 
+// ── Prover log types ────────────────────────────────────────────────
+
+export interface ProverLogEntry {
+  ts: string;
+  event: 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'code_snapshot' | 'session_end';
+  content?: string;
+  tool?: string;
+  input?: Record<string, unknown>;
+  step?: number;
+  file?: string;
+  snapshot_path?: string;
+  session_id?: string;
+  total_cost_usd?: number;
+  duration_ms?: number;
+  num_turns?: number;
+  summary?: string;
+}
+
+export interface LogStats {
+  thinkingCount: number;
+  toolCallCount: number;
+  textCount: number;
+  codeSnapshotCount: number;
+  totalEntries: number;
+  durationMs?: number;
+  totalCost?: number;
+  numTurns?: number;
+  sessionSummary?: string;
+  startTs?: string;
+  endTs?: string;
+}
+
+export interface LogResponse {
+  entries: ProverLogEntry[];
+  stats: LogStats;
+}
+
+// ── Hooks ───────────────────────────────────────────────────────────
+
 export function useProofGraphDeclarations() {
   return useQuery<DeclarationsResponse>({
     queryKey: ['proofgraphDeclarations'],
@@ -59,13 +97,12 @@ export function useProofGraphTimeline() {
   });
 }
 
-/** Snapshot at a specific iteration. keepPreviousData prevents graph flash on switch. */
 export function useProofGraphSnapshot(iteration: string) {
   return useQuery<DeclarationsResponse>({
     queryKey: ['proofgraphSnapshot', iteration],
     queryFn: () => fetchJson(`/api/proofgraph/snapshot/${iteration}`),
     enabled: !!iteration,
-    placeholderData: (prev) => prev, // keep showing previous data while loading
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -77,5 +114,17 @@ export function useProofGraphNodeDetail(file: string, name: string, iteration?: 
     queryKey: ['proofgraphNode', file, name, iteration || ''],
     queryFn: () => fetchJson(url),
     enabled: !!file && !!name,
+  });
+}
+
+/** Fetch prover log entries for a file at a specific iteration */
+export function useProofGraphLogs(file: string, iteration?: string) {
+  const url = file && iteration
+    ? `/api/proofgraph/logs/${encodeURIComponent(file)}/${encodeURIComponent(iteration)}`
+    : '';
+  return useQuery<LogResponse>({
+    queryKey: ['proofgraphLogs', file, iteration || ''],
+    queryFn: () => fetchJson(url),
+    enabled: !!file && !!iteration,
   });
 }

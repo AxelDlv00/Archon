@@ -1,9 +1,10 @@
 /**
- * Proof Graph API v5
+ * Proof Graph API v6
  *
- * Key fix: timeline now returns `changedDeclarations` — the set of declaration IDs
- * whose body text actually changed compared to the previous iteration. This is what
- * the client uses for orange (changed) vs red (unchanged) coloring.
+ * v6 additions:
+ *   - GET /api/proofgraph/logs/:file/:iteration — prover log entries for a file at an iteration
+ *     Returns thinking, text, tool_call, tool_result, code_snapshot, session_end events
+ *     from .archon/logs/iter-NNN/provers/File_Slug.jsonl
  */
 import fs from 'fs';
 import path from 'path';
@@ -111,7 +112,6 @@ function snapIters(lp: string): string[] {
   }).sort();
 }
 
-/** Accumulate most-recent snapshot content per slug, up to targetIter. */
 function resolveState(lp: string, targetIter: string): Map<string, { content: string; dn: string }> {
   const all = fs.readdirSync(lp).filter(d => d.startsWith('iter-') && d <= targetIter && fs.existsSync(path.join(lp, d, 'snapshots'))).sort();
   const best = new Map<string, { content: string; dn: string }>();
@@ -127,7 +127,6 @@ function resolveState(lp: string, targetIter: string): Map<string, { content: st
   return best;
 }
 
-/** Build body map: declId -> body text, for a given accumulated state */
 function bodyMap(state: Map<string, { content: string; dn: string }>): Map<string, string> {
   const m = new Map<string, string>();
   for (const [, { content, dn }] of state) {
@@ -138,12 +137,10 @@ function bodyMap(state: Map<string, { content: string; dn: string }>): Map<strin
 
 function buildTimeline(lp: string, pp: string) {
   const iters = snapIters(lp);
-  let prevBodies = new Map<string, string>(); // bodies at the previous iteration
-
+  let prevBodies = new Map<string, string>();
   return iters.map((iterDir, idx) => {
     let timestamp: string | undefined;
     try { const m = JSON.parse(fs.readFileSync(path.join(lp, iterDir, 'meta.json'), 'utf-8')); timestamp = m.completedAt || m.startedAt; } catch { /* */ }
-
     const state = resolveState(lp, iterDir);
     const perFile: Record<string, number> = {};
     const perDecl: Record<string, { hasSorry: boolean; sorryCount: number }> = {};
@@ -153,8 +150,6 @@ function buildTimeline(lp: string, pp: string) {
       perFile[dn] = sc; total += sc;
       for (const d of parseContent(content, dn)) perDecl[`${dn}::${d.name}`] = { hasSorry: d.hasSorry, sorryCount: d.sorryCount };
     }
-
-    // Compute which declarations actually changed body from previous iteration
     const curBodies = bodyMap(state);
     const changed: string[] = [];
     for (const [id, body] of curBodies) {
@@ -162,7 +157,6 @@ function buildTimeline(lp: string, pp: string) {
       if (prev === undefined || prev !== body) changed.push(id);
     }
     prevBodies = curBodies;
-
     return { iteration: iterDir, timestamp, totalSorry: total, perFile, perDeclaration: perDecl, changedDeclarations: changed };
   });
 }
@@ -189,6 +183,45 @@ function findDeclAt(lp: string, pp: string, iter: string, file: string, name: st
   const entry = state.get(slug);
   if (entry) { const d = parseContent(entry.content, file).find(d => d.name === name); if (d) return d; }
   return parseFile(path.join(pp, file), file).find(d => d.name === name);
+}
+
+// ── Prover log reading ────────────────────────────────────────────────
+
+/** Relevant event types to surface in the UI */
+const LOG_EVENTS = new Set(['thinking', 'text', 'tool_call', 'tool_result', 'code_snapshot', 'session_end']);
+
+/**
+ * Read prover log for a file slug at a given iteration.
+ * Path: .archon/logs/{iteration}/provers/{FileSlug}.jsonl
+ * File slug: "DecouplingMomentCurve/UncertaintyPrinciple.lean" -> "DecouplingMomentCurve_UncertaintyPrinciple"
+ */
+function readProverLog(lp: string, iteration: string, fileSlug: string) {
+  const logPath = path.join(lp, iteration, 'provers', `${fileSlug}.jsonl`);
+  if (!fs.existsSync(logPath)) return [];
+  const entries: any[] = [];
+  try {
+    const raw = fs.readFileSync(logPath, 'utf-8');
+    for (const line of raw.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const e = JSON.parse(line);
+        if (!LOG_EVENTS.has(e.event)) continue;
+        // Truncate very long content to keep response size sane
+        if (e.event === 'tool_result' && typeof e.content === 'string' && e.content.length > 2000) {
+          e.content = e.content.slice(0, 2000) + `\n... [truncated, ${e.content.length} chars total]`;
+        }
+        if (e.event === 'thinking' && typeof e.content === 'string' && e.content.length > 3000) {
+          e.content = e.content.slice(0, 3000) + `\n... [truncated, ${e.content.length} chars total]`;
+        }
+        entries.push(e);
+      } catch { /* skip malformed lines */ }
+    }
+  } catch { /* file not readable */ }
+  return entries;
+}
+
+function fileToSlug(file: string): string {
+  return file.replace(/\.lean$/, '').replace(/\//g, '_');
 }
 
 export function register(fastify: FastifyInstance, paths: ProjectPaths) {
@@ -221,6 +254,39 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
     return {
       declaration: decl ? { id: `${decl.file}::${decl.name}`, kind: decl.kind, name: decl.name, file: decl.file, line: decl.line, endLine: decl.endLine, hasSorry: decl.hasSorry, sorryCount: decl.sorryCount, signature: decl.signature, body: decl.body } : null,
       milestones: getMilestonesForNode(ap, file, name, iter),
+    };
+  });
+
+  // ── Prover log endpoint ───────────────────────────────────────────
+  fastify.get<{ Params: { file: string; iteration: string } }>('/api/proofgraph/logs/:file/:iteration', async (req, reply) => {
+    const file = decodeURIComponent(req.params.file);
+    const iteration = req.params.iteration;
+    if (!iteration.startsWith('iter-')) return reply.status(400).send({ error: 'Invalid iteration' });
+    const slug = fileToSlug(file);
+    const entries = readProverLog(lp, iteration, slug);
+
+    // Compute summary stats
+    let thinkingCount = 0, toolCallCount = 0, textCount = 0, codeSnapshotCount = 0;
+    let durationMs: number | undefined, totalCost: number | undefined, numTurns: number | undefined, sessionSummary: string | undefined;
+    let startTs: string | undefined, endTs: string | undefined;
+    for (const e of entries) {
+      if (e.event === 'thinking') thinkingCount++;
+      else if (e.event === 'tool_call') toolCallCount++;
+      else if (e.event === 'text') textCount++;
+      else if (e.event === 'code_snapshot') codeSnapshotCount++;
+      else if (e.event === 'session_end') {
+        durationMs = e.duration_ms;
+        totalCost = e.total_cost_usd;
+        numTurns = e.num_turns;
+        sessionSummary = e.summary;
+      }
+      if (!startTs) startTs = e.ts;
+      endTs = e.ts;
+    }
+
+    return {
+      entries,
+      stats: { thinkingCount, toolCallCount, textCount, codeSnapshotCount, totalEntries: entries.length, durationMs, totalCost, numTurns, sessionSummary, startTs, endTs }
     };
   });
 }

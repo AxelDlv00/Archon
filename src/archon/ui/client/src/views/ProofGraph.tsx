@@ -1,16 +1,17 @@
 /**
- * ProofGraph v5
+ * ProofGraph v6
  *
- * Fixes:
- *   - Zoom 5x faster (base 1.01 instead of 1.002)
- *   - Orange/red computed from changedDeclarations (actual body diffs), not perDeclaration
- *   - File group labels show basename only
- *   - No flash on timeline switch: keepPreviousData + don't fall through to declData while loading
+ * v6 additions:
+ *   - Agent Log section in sidebar: shows prover thinking, tool calls, and text
+ *     entries from the JSONL log for the file being inspected at the current iteration
+ *   - Session stats bar: duration, tool calls, cost when session_end data is available
+ *   - Collapsible log entries with event-type icons and timestamps
  */
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   useProofGraphDeclarations, useProofGraphTimeline, useProofGraphSnapshot, useProofGraphNodeDetail,
-  type GraphDeclaration, type DeclarationsResponse,
+  useProofGraphLogs,
+  type GraphDeclaration, type DeclarationsResponse, type ProverLogEntry, type LogStats,
 } from '../hooks/useProofGraph';
 import { STATUS_COLORS } from '../utils/constants';
 import AttemptCard from '../components/AttemptCard';
@@ -21,7 +22,6 @@ import styles from './ProofGraph.module.css';
 const C_GREEN = '#28a745', C_ORANGE = '#e36209', C_RED = '#cb2431';
 function ncolor(sorry: boolean, touched: boolean) { return sorry ? (touched ? C_ORANGE : C_RED) : C_GREEN; }
 
-/** Extract filename from path: "Foo/Bar/Baz.lean" -> "Baz.lean" */
 function basename(p: string) { const i = p.lastIndexOf('/'); return i >= 0 ? p.slice(i + 1) : p; }
 
 // ── Layout ───────────────────────────────────────────────────────────
@@ -86,7 +86,6 @@ function useViewBox(cw: number, ch: number) {
       const fx = (e.clientX - rect.left) / rect.width, fy = (e.clientY - rect.top) / rect.height;
       setVb(([vx, vy, vw, vh]) => {
         if (e.ctrlKey || e.metaKey) {
-          // FASTER zoom: base 1.01 instead of 1.002
           const factor = Math.pow(1.01, e.deltaY);
           const nw = Math.max(cw * MIN, Math.min(cw * MAX, vw * factor));
           const nh = Math.max(ch * MIN, Math.min(ch * MAX, vh * factor));
@@ -141,6 +140,68 @@ function Spark({ data, ai, w = 280, h = 34 }: { data: number[]; ai?: number; w?:
   </svg>;
 }
 
+// ── Agent Log Entry ─────────────────────────────────────────────────
+
+const EVT_ICONS: Record<string, string> = {
+  thinking: '💭', text: '💬', tool_call: '🔧', tool_result: '📋', code_snapshot: '📸', session_end: '🏁',
+};
+const EVT_COLORS: Record<string, string> = {
+  thinking: 'rgba(111,66,193,0.08)', text: 'rgba(3,102,214,0.06)', tool_call: 'rgba(227,98,9,0.06)',
+  tool_result: 'rgba(40,167,69,0.06)', code_snapshot: 'rgba(0,134,114,0.06)', session_end: 'rgba(203,36,49,0.06)',
+};
+
+function formatTime(ts: string) {
+  try { const d = new Date(ts); return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); } catch { return ''; }
+}
+
+function formatDuration(ms: number) {
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60000), s = Math.round((ms % 60000) / 1000);
+  return `${m}m ${s}s`;
+}
+
+function LogEntry({ entry, defaultOpen }: { entry: ProverLogEntry; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen ?? false);
+  const icon = EVT_ICONS[entry.event] || '•';
+  const bg = EVT_COLORS[entry.event] || 'transparent';
+
+  let label = entry.event;
+  if (entry.event === 'tool_call' && entry.tool) label = `tool: ${entry.tool}`;
+  if (entry.event === 'tool_result') label = 'result';
+  if (entry.event === 'code_snapshot') label = `snapshot step ${entry.step ?? '?'}`;
+
+  const hasContent = !!(entry.content || entry.input || entry.summary);
+
+  return (
+    <div className={styles.logEntry} style={{ background: bg }}>
+      <div className={styles.logHead} onClick={() => hasContent && setOpen(!open)} style={{ cursor: hasContent ? 'pointer' : 'default' }}>
+        <span className={styles.logIcon}>{icon}</span>
+        <span className={styles.logLabel}>{label}</span>
+        <span className={styles.logTs}>{formatTime(entry.ts)}</span>
+        {hasContent && <span className={styles.logToggle}>{open ? '▾' : '▸'}</span>}
+      </div>
+      {open && hasContent && (
+        <div className={styles.logBody}>
+          {entry.content && <pre className={styles.logPre}>{entry.content}</pre>}
+          {entry.input && <pre className={styles.logPre}>{typeof entry.input === 'string' ? entry.input : JSON.stringify(entry.input, null, 2)}</pre>}
+          {entry.summary && <pre className={styles.logPre}>{entry.summary}</pre>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SessionStats({ stats }: { stats: LogStats }) {
+  const parts: string[] = [];
+  if (stats.durationMs) parts.push(formatDuration(stats.durationMs));
+  if (stats.numTurns) parts.push(`${stats.numTurns} turns`);
+  if (stats.toolCallCount) parts.push(`${stats.toolCallCount} tool calls`);
+  if (stats.thinkingCount) parts.push(`${stats.thinkingCount} thinking`);
+  if (stats.totalCost != null) parts.push(`$${stats.totalCost.toFixed(2)}`);
+  if (!parts.length) return null;
+  return <div className={styles.logStats}>{parts.join(' · ')}</div>;
+}
+
 // ── Main ─────────────────────────────────────────────────────────────
 
 export default function ProofGraph() {
@@ -149,17 +210,15 @@ export default function ProofGraph() {
   const [selNode, setSelNode] = useState('');
   const [selTl, setSelTl] = useState(-1);
   const [codeOpen, setCodeOpen] = useState(true);
+  const [logsOpen, setLogsOpen] = useState(false);
 
   const selIter = selTl >= 0 && tlData ? tlData[selTl]?.iteration : '';
   const { data: snapData, isFetching: snapLoading } = useProofGraphSnapshot(selIter);
 
-  // Active data: when viewing a snapshot, use snapData. Don't fall through to declData while loading.
-  // placeholderData in the hook keeps the previous snapshot visible during load.
   const activeData: DeclarationsResponse | undefined = selIter
-    ? (snapData ?? undefined) // snapData holds previous value via placeholderData while loading
+    ? (snapData ?? undefined)
     : declData;
 
-  // Changed set: declarations whose body actually changed at this timeline point
   const changedSet = useMemo(() => {
     const s = new Set<string>();
     if (!tlData?.length) return s;
@@ -173,6 +232,9 @@ export default function ProofGraph() {
 
   const selFile = selNode.split('::')[0] || '', selName = selNode.split('::')[1] || '';
   const { data: nd } = useProofGraphNodeDetail(selFile, selName, selIter || undefined);
+
+  // Fetch prover logs for the selected file at the current iteration
+  const { data: logData } = useProofGraphLogs(selFile, selIter || undefined);
 
   const lo = useMemo(() => activeData ? doLayout(activeData.declarations, activeData.edges, activeData.files, changedSet) : null, [activeData, changedSet]);
   const { svgRef, cRef, vb, zoomIn, zoomOut, reset, scale } = useViewBox(lo?.w ?? 0, lo?.h ?? 0);
@@ -207,7 +269,16 @@ export default function ProofGraph() {
   const tlMax = useMemo(() => tlData ? Math.max(...tlData.map(t => t.totalSorry), 1) : 1, [tlData]);
   const codeLines = useMemo(() => nd?.declaration?.body?.split('\n') ?? [], [nd]);
   const hlCode = useMemo(() => highlightLeanLines(codeLines), [codeLines]);
-  const clickNode = useCallback((id: string) => { setSelNode(p => p === id ? '' : id); setCodeOpen(true); }, []);
+  const clickNode = useCallback((id: string) => { setSelNode(p => p === id ? '' : id); setCodeOpen(true); setLogsOpen(false); }, []);
+
+  // Filter log entries relevant to the selected declaration name
+  const filteredLogs = useMemo(() => {
+    if (!logData?.entries?.length) return [];
+    // Show all entries for the file — not filtered by declaration,
+    // since the agent works on the file as a whole and its thinking
+    // about any theorem may reference others. Users can scroll.
+    return logData.entries;
+  }, [logData]);
 
   if (isLoading) return <div className={styles.loading}>Loading…</div>;
   if (!declData?.declarations?.length) return <div className={styles.page}><div className={styles.empty}><h3>No declarations</h3><p>No .lean files with declarations</p></div></div>;
@@ -248,12 +319,10 @@ export default function ProofGraph() {
               <marker id="gb" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto"><polygon points="0 0,6 2,0 4" fill={C_RED} /></marker>
               <marker id="ghl" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto"><polygon points="0 0,6 2,0 4" fill="var(--blue)" /></marker>
             </defs>
-            {/* File groups */}
             {lo.g.map(g => <g key={g.file}>
               <rect x={g.x} y={g.y} width={g.w} height={g.h} rx={10} ry={10} fill={BG[g.ci]} stroke={BS[g.ci]} strokeWidth={1.5} />
               <text x={g.x + 8} y={g.y + 14} fontSize="10" fontWeight="600" fill="var(--text-muted)" fontFamily="var(--font-mono)">{g.label}</text>
             </g>)}
-            {/* Nodes */}
             {lo.n.map(n => {
               const sel = n.id === selNode, att = n.d.totalAttempts ?? 0, ms = n.d.latestMilestoneStatus;
               return <g key={n.id} data-node="1" onClick={() => clickNode(n.id)} style={{ cursor: 'pointer' }}>
@@ -265,7 +334,6 @@ export default function ProofGraph() {
                 {n.d.hasSorry ? <><rect x={n.x + n.w - 26} y={n.y + 3} width={20} height={12} rx={6} fill={n.c} opacity={0.15} /><text x={n.x + n.w - 16} y={n.y + 12} fontSize="8" fontWeight="700" fill={n.c} textAnchor="middle" fontFamily="var(--font-mono)">{n.d.sorryCount}s</text></> : <text x={n.x + n.w - 14} y={n.y + 13} fill={C_GREEN} fontSize="10" fontWeight="700">✓</text>}
               </g>;
             })}
-            {/* Edges ON TOP */}
             {lo.e.map((e, i) => {
               const k = `${e.from.id}->${e.to.id}`, hl = hlEdges.has(k);
               const sg = e.from.d.file === e.to.d.file;
@@ -311,6 +379,26 @@ export default function ProofGraph() {
                 {Array.isArray(m.attempts) && m.attempts.length > 0 && <div className={styles.msAttempts}>{(m.attempts as any[]).map((a, j) => <AttemptCard key={j} att={a} />)}</div>}
               </div>)}
             </div> : null}
+
+            {/* Agent Log section — only shown when viewing a specific iteration */}
+            {isSnap && filteredLogs.length > 0 && (
+              <div className={styles.logSection}>
+                <div className={styles.logHeader} onClick={() => setLogsOpen(!logsOpen)}>
+                  {logsOpen ? '▾' : '▸'} Agent Log ({filteredLogs.length} events)
+                </div>
+                {logsOpen && <>
+                  {logData?.stats && <SessionStats stats={logData.stats} />}
+                  {logData?.stats?.sessionSummary && (
+                    <div className={styles.logSummary}>{logData.stats.sessionSummary}</div>
+                  )}
+                  <div className={styles.logList}>
+                    {filteredLogs.map((e, i) => (
+                      <LogEntry key={i} entry={e} defaultOpen={e.event === 'session_end'} />
+                    ))}
+                  </div>
+                </>}
+              </div>
+            )}
           </>}
         </div>
       </div>
