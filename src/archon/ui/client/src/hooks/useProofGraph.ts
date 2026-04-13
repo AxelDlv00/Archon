@@ -9,7 +9,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 // ── Types ────────────────────────────────────────────────────────────
 
 export interface GraphDeclaration {
-  id: string;       // "file::name"
+  id: string;
   kind: string;
   name: string;
   file: string;
@@ -17,17 +17,16 @@ export interface GraphDeclaration {
   hasSorry: boolean;
   sorryCount: number;
   signature: string;
+  // Milestone summary (pre-aggregated on server)
+  totalAttempts: number;
+  latestMilestoneStatus?: string;
+  milestoneSessions: string[];
+  blocker?: string;
 }
 
-export interface GraphEdge {
-  from: string;
-  to: string;
-}
+export interface GraphEdge { from: string; to: string; }
 
-export interface GraphFileGroup {
-  file: string;
-  declarations: string[];
-}
+export interface GraphFileGroup { file: string; declarations: string[]; }
 
 export interface DeclarationsResponse {
   declarations: GraphDeclaration[];
@@ -40,6 +39,7 @@ export interface TimelinePoint {
   timestamp?: string;
   totalSorry: number;
   perFile: Record<string, number>;
+  perDeclaration: Record<string, { hasSorry: boolean; sorryCount: number }>;
 }
 
 export interface NodeMilestoneInfo {
@@ -53,16 +53,9 @@ export interface NodeMilestoneInfo {
 
 export interface NodeDetail {
   declaration: {
-    id: string;
-    kind: string;
-    name: string;
-    file: string;
-    line: number;
-    endLine: number;
-    hasSorry: boolean;
-    sorryCount: number;
-    signature: string;
-    body: string;
+    id: string; kind: string; name: string; file: string;
+    line: number; endLine: number; hasSorry: boolean; sorryCount: number;
+    signature: string; body: string;  // FULL, never truncated
   } | null;
   milestones: NodeMilestoneInfo[];
 }
@@ -82,6 +75,15 @@ export function useProofGraphTimeline() {
     queryKey: ['proofgraphTimeline'],
     queryFn: () => fetchJson('/api/proofgraph/timeline'),
     refetchInterval: 15000,
+  });
+}
+
+/** Declarations at a specific iteration (from snapshot state) */
+export function useProofGraphSnapshot(iteration: string) {
+  return useQuery<DeclarationsResponse>({
+    queryKey: ['proofgraphSnapshot', iteration],
+    queryFn: () => fetchJson(`/api/proofgraph/snapshot/${iteration}`),
+    enabled: !!iteration,
   });
 }
 

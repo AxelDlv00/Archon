@@ -1,8 +1,5 @@
 /**
  * Archon UI Server — entry point
- *
- * Composes route modules and starts Fastify.
- * Each route module is self-contained under ./routes/.
  */
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -12,7 +9,6 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Route modules
 import { register as registerProject } from './routes/project.js';
 import { register as registerLogs } from './routes/logs.js';
 import { register as registerIterations } from './routes/iterations.js';
@@ -49,7 +45,6 @@ export async function createServer(options: { projectPath: string; port: number 
   await fastify.register(cors);
   await fastify.register(websocket);
 
-  // Serve built client (SPA)
   const clientBuildPath = path.join(__dirname, '../../client/dist');
   if (fs.existsSync(clientBuildPath)) {
     await fastify.register(staticFiles, { root: clientBuildPath, prefix: '/' });
@@ -59,7 +54,6 @@ export async function createServer(options: { projectPath: string; port: number 
     });
   }
 
-  // Register route modules
   registerProject(fastify, paths);
   registerLogs(fastify, paths);
   registerIterations(fastify, paths);
@@ -72,7 +66,6 @@ export async function createServer(options: { projectPath: string; port: number 
   return fastify;
 }
 
-// CLI entry point
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { projectPath, port } = parseArgs();
   console.log(`Archon UI → http://localhost:${port}  (project: ${projectPath})`);

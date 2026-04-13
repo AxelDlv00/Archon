@@ -3,415 +3,214 @@
  *
  * Endpoints:
  *   GET /api/proofgraph/declarations
- *     → All declarations across .lean files with sorry status + dependency edges
+ *     → Current declarations with sorry status + edges + milestone summaries
  *
  *   GET /api/proofgraph/timeline
- *     → Per-iteration sorry counts (global + per-file) for the timeline scrubber
+ *     → Only iterations that have actual snapshots (same set as Diffs)
+ *
+ *   GET /api/proofgraph/snapshot/:iteration
+ *     → Declarations parsed from snapshot state at a given iteration
  *
  *   GET /api/proofgraph/node/:file/:name
- *     → Detail for a single node: code, milestone history, attempt history
+ *     → FULL code (never truncated), milestone history, attempt history
  */
 import fs from 'fs';
 import path from 'path';
 import type { FastifyInstance } from 'fastify';
-import { readFileOr } from '../utils.js';
 import { countSorryInLean } from '../utils/sorryCount.js';
 import type { ProjectPaths } from './project.js';
 
-// ── Lean parser helpers ──────────────────────────────────────────────
-
-interface LeanDeclaration {
-  kind: 'theorem' | 'lemma' | 'def' | 'instance' | 'class' | 'structure' | 'inductive' | 'abbrev' | 'example';
-  name: string;
-  file: string;
-  line: number;
-  endLine: number;
-  hasSorry: boolean;
-  sorryCount: number;
-  signature: string;    // first line of the declaration
-  body: string;         // full declaration text (truncated)
-  usedNames: string[];  // identifiers referenced in the body
-}
-
-interface DependencyEdge {
-  from: string;  // "file::name"
-  to: string;    // "file::name"
-}
-
 const DECL_RE = /^(noncomputable\s+)?(private\s+)?(protected\s+)?(theorem|lemma|def|instance|class|structure|inductive|abbrev|example)\s+([^\s:(\[{]+)/;
 
-function parseLeanFile(filePath: string, relPath: string): LeanDeclaration[] {
-  let content: string;
-  try {
-    content = fs.readFileSync(filePath, 'utf-8');
-  } catch {
-    return [];
-  }
+interface LeanDeclaration {
+  kind: string; name: string; file: string; line: number; endLine: number;
+  hasSorry: boolean; sorryCount: number; signature: string; body: string; usedNames: string[];
+}
 
+function parseLeanContent(content: string, relPath: string): LeanDeclaration[] {
   const lines = content.split('\n');
-  const sorryOccurrences = countSorryInLean(content);
-  const sorryLines = new Set(sorryOccurrences.map(o => o.line));
-
+  const sorryLines = new Set(countSorryInLean(content).map(o => o.line));
   const decls: LeanDeclaration[] = [];
   let i = 0;
-
   while (i < lines.length) {
     const match = lines[i].match(DECL_RE);
-    if (!match) {
-      i++;
-      continue;
-    }
-
-    const kind = match[4] as LeanDeclaration['kind'];
-    const name = match[5];
-    const startLine = i + 1;
-
-    // Find end of declaration (heuristic: next top-level decl or end of file)
-    let endLine = startLine;
-    let braceDepth = 0;
-    let foundBody = false;
+    if (!match) { i++; continue; }
+    const kind = match[4]; const name = match[5]; const startLine = i + 1;
+    let endLine = startLine; let braceDepth = 0;
     for (let j = i; j < lines.length; j++) {
-      const line = lines[j];
-      for (const ch of line) {
-        if (ch === '{' || ch === '⟨') braceDepth++;
-        if (ch === '}' || ch === '⟩') braceDepth--;
-      }
-      if (j > i && braceDepth <= 0) {
-        // Check if next non-empty line starts a new declaration
-        if (j + 1 < lines.length) {
-          const nextLine = lines[j + 1].trim();
-          if (nextLine && DECL_RE.test(nextLine)) {
-            endLine = j + 1;
-            foundBody = true;
-            break;
-          }
-        }
-      }
-      if (line.includes(':=') || line.includes('where') || line.includes('by')) {
-        foundBody = true;
+      for (const ch of lines[j]) { if (ch === '{' || ch === '⟨') braceDepth++; if (ch === '}' || ch === '⟩') braceDepth--; }
+      if (j > i && braceDepth <= 0 && j + 1 < lines.length) {
+        const nl = lines[j + 1].trim();
+        if (nl && DECL_RE.test(nl)) { endLine = j + 1; break; }
       }
       endLine = j + 1;
     }
-    if (!foundBody) endLine = Math.min(startLine + 50, lines.length);
-
-    // Count sorries in this declaration's range
-    let declSorryCount = 0;
-    for (let ln = startLine; ln <= endLine; ln++) {
-      if (sorryLines.has(ln)) declSorryCount++;
-    }
-
-    // Extract body text (truncated)
-    const bodyLines = lines.slice(i, Math.min(i + (endLine - startLine), i + 100));
-    const body = bodyLines.join('\n');
-
-    // Extract referenced identifiers (very simple heuristic)
-    const usedNames = extractReferencedNames(body);
-
-    decls.push({
-      kind,
-      name,
-      file: relPath,
-      line: startLine,
-      endLine,
-      hasSorry: declSorryCount > 0,
-      sorryCount: declSorryCount,
-      signature: lines[i].trim(),
-      body: body.length > 3000 ? body.slice(0, 3000) + '\n...(truncated)' : body,
-      usedNames,
-    });
-
+    let sc = 0; for (let ln = startLine; ln <= endLine; ln++) { if (sorryLines.has(ln)) sc++; }
+    const body = lines.slice(i, i + (endLine - startLine)).join('\n');
+    decls.push({ kind, name, file: relPath, line: startLine, endLine, hasSorry: sc > 0, sorryCount: sc, signature: lines[i].trim(), body, usedNames: extractRefs(body) });
     i = endLine;
   }
-
   return decls;
 }
 
-function extractReferencedNames(body: string): string[] {
-  // Extract identifiers that could be references to other declarations
-  // Skip Lean keywords, tactics, etc.
-  const KEYWORDS = new Set([
-    'import', 'open', 'namespace', 'section', 'end', 'variable', 'universe',
-    'theorem', 'lemma', 'def', 'instance', 'class', 'structure', 'inductive', 'abbrev', 'example',
-    'by', 'where', 'fun', 'match', 'with', 'if', 'then', 'else', 'let', 'in', 'have', 'show',
-    'from', 'intro', 'simp', 'rw', 'rfl', 'exact', 'apply', 'constructor', 'cases', 'induction',
-    'sorry', 'calc', 'do', 'return', 'pure', 'true', 'false', 'Type', 'Prop', 'Sort',
-    'noncomputable', 'private', 'protected', 'partial', 'unsafe', 'mutual',
-  ]);
+function parseLeanFile(filePath: string, relPath: string): LeanDeclaration[] {
+  try { return parseLeanContent(fs.readFileSync(filePath, 'utf-8'), relPath); } catch { return []; }
+}
 
-  const identRe = /\b([A-Za-z_][A-Za-z0-9_.']*)\b/g;
-  const names = new Set<string>();
-  let m: RegExpExecArray | null;
-  while ((m = identRe.exec(body)) !== null) {
-    const id = m[1];
-    if (!KEYWORDS.has(id) && id.length > 1 && !/^\d/.test(id)) {
-      // Take the base name (before any dot)
-      const base = id.split('.')[0];
-      if (base.length > 1 && !KEYWORDS.has(base)) {
-        names.add(base);
-      }
-    }
-  }
+function extractRefs(body: string): string[] {
+  const KW = new Set(['import','open','namespace','section','end','variable','universe','theorem','lemma','def','instance','class','structure','inductive','abbrev','example','by','where','fun','match','with','if','then','else','let','in','have','show','from','intro','simp','rw','rfl','exact','apply','constructor','cases','induction','sorry','calc','do','return','pure','true','false','Type','Prop','Sort','noncomputable','private','protected','partial','unsafe','mutual']);
+  const re = /\b([A-Za-z_][A-Za-z0-9_.']*)\b/g;
+  const names = new Set<string>(); let m;
+  while ((m = re.exec(body)) !== null) { const b = m[1].split('.')[0]; if (!KW.has(b) && b.length > 1) names.add(b); }
   return Array.from(names);
 }
 
-function buildDependencyEdges(decls: LeanDeclaration[]): DependencyEdge[] {
-  // Build a map from name → declaration key
-  const nameToKey = new Map<string, string>();
-  for (const d of decls) {
-    nameToKey.set(d.name, `${d.file}::${d.name}`);
-  }
-
-  const edges: DependencyEdge[] = [];
-  const seen = new Set<string>();
-
-  for (const d of decls) {
-    const fromKey = `${d.file}::${d.name}`;
-    for (const ref of d.usedNames) {
-      const toKey = nameToKey.get(ref);
-      if (toKey && toKey !== fromKey) {
-        const edgeKey = `${fromKey}->${toKey}`;
-        if (!seen.has(edgeKey)) {
-          seen.add(edgeKey);
-          edges.push({ from: fromKey, to: toKey });
-        }
-      }
-    }
-  }
-
+function buildEdges(decls: LeanDeclaration[]) {
+  const map = new Map<string, string>(); for (const d of decls) map.set(d.name, `${d.file}::${d.name}`);
+  const edges: { from: string; to: string }[] = []; const seen = new Set<string>();
+  for (const d of decls) { const fk = `${d.file}::${d.name}`; for (const r of d.usedNames) { const tk = map.get(r); if (tk && tk !== fk) { const ek = `${fk}->${tk}`; if (!seen.has(ek)) { seen.add(ek); edges.push({ from: fk, to: tk }); } } } }
   return edges;
 }
 
-// ── Sorry timeline from iteration snapshots / sorry count ────────────
-
-interface TimelinePoint {
-  iteration: string;
-  timestamp?: string;
-  totalSorry: number;
-  perFile: Record<string, number>;
-}
-
-function buildSorryTimeline(logsPath: string, projectPath: string): TimelinePoint[] {
-  const timeline: TimelinePoint[] = [];
-
-  if (!fs.existsSync(logsPath)) return timeline;
-
-  const iterDirs = fs.readdirSync(logsPath)
-    .filter(d => d.startsWith('iter-') && fs.statSync(path.join(logsPath, d)).isDirectory())
-    .sort();
-
-  for (const iterDir of iterDirs) {
-    const metaFile = path.join(logsPath, iterDir, 'meta.json');
-    let timestamp: string | undefined;
-    try {
-      const meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8'));
-      timestamp = meta.startedAt || meta.completedAt;
-    } catch { /* ignore */ }
-
-    // Try to get sorry count from snapshots (baseline = before, latest step = after)
-    const snapshotsDir = path.join(logsPath, iterDir, 'snapshots');
-    const perFile: Record<string, number> = {};
-    let totalSorry = 0;
-
-    if (fs.existsSync(snapshotsDir)) {
-      for (const slug of fs.readdirSync(snapshotsDir)) {
-        const slugDir = path.join(snapshotsDir, slug);
-        if (!fs.statSync(slugDir).isDirectory()) continue;
-
-        // Find the latest snapshot file
-        const files = fs.readdirSync(slugDir)
-          .filter(f => f.endsWith('.lean'))
-          .sort();
-        const latestFile = files[files.length - 1];
-        if (!latestFile) continue;
-
-        try {
-          const content = fs.readFileSync(path.join(slugDir, latestFile), 'utf-8');
-          const count = countSorryInLean(content).length;
-          const displayName = slug.replace(/_/g, '/') + '.lean';
-          perFile[displayName] = count;
-          totalSorry += count;
-        } catch { /* ignore */ }
-      }
-    }
-
-    // If no snapshots, try counting from actual .lean files at that point
-    // (only for the last iteration as a fallback)
-    if (Object.keys(perFile).length === 0 && iterDir === iterDirs[iterDirs.length - 1]) {
-      // Use current project state
-      function walkLean(dir: string) {
-        let entries: fs.Dirent[];
-        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-        for (const entry of entries) {
-          const full = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            if (['_lake', '.lake', '.archon', 'node_modules'].includes(entry.name)) continue;
-            walkLean(full);
-          } else if (entry.isFile() && entry.name.endsWith('.lean')) {
-            try {
-              const content = fs.readFileSync(full, 'utf-8');
-              const count = countSorryInLean(content).length;
-              if (count > 0) {
-                const rel = path.relative(projectPath, full);
-                perFile[rel] = count;
-                totalSorry += count;
-              }
-            } catch { /* ignore */ }
-          }
-        }
-      }
-      walkLean(projectPath);
-    }
-
-    timeline.push({ iteration: iterDir, timestamp, totalSorry, perFile });
-  }
-
-  return timeline;
-}
-
-// ── Milestone cross-reference ────────────────────────────────────────
-
-interface NodeMilestoneInfo {
-  sessionId: string;
-  status: string;
-  attempts: unknown[];
-  blocker?: string;
-  nextSteps?: string;
-  keyLemmas?: string[];
-}
-
-function getMilestonesForNode(
-  archonPath: string,
-  file: string,
-  theorem: string,
-): NodeMilestoneInfo[] {
-  const sessionsDir = path.join(archonPath, 'proof-journal', 'sessions');
-  if (!fs.existsSync(sessionsDir)) return [];
-
-  const results: NodeMilestoneInfo[] = [];
-  const sessionDirs = fs.readdirSync(sessionsDir)
-    .filter(d => d.startsWith('session_'))
-    .sort();
-
-  for (const sessionDir of sessionDirs) {
-    const milestonesFile = path.join(sessionsDir, sessionDir, 'milestones.jsonl');
-    if (!fs.existsSync(milestonesFile)) continue;
-
-    const content = fs.readFileSync(milestonesFile, 'utf-8');
-    for (const line of content.split('\n')) {
+function getAllMilestones(archonPath: string) {
+  const dir = path.join(archonPath, 'proof-journal', 'sessions');
+  if (!fs.existsSync(dir)) return new Map<string, { totalAttempts: number; latestStatus: string; sessions: string[]; blocker?: string }>();
+  const result = new Map<string, { totalAttempts: number; latestStatus: string; sessions: string[]; blocker?: string }>();
+  for (const sd of fs.readdirSync(dir).filter(d => d.startsWith('session_')).sort()) {
+    const mf = path.join(dir, sd, 'milestones.jsonl');
+    if (!fs.existsSync(mf)) continue;
+    for (const line of fs.readFileSync(mf, 'utf-8').split('\n')) {
       if (!line.trim()) continue;
       try {
-        const m = JSON.parse(line);
-        const target = m.target || {};
-        // Match by file basename or full path, and theorem name
-        const mFile = (target.file || '').replace(/\\/g, '/');
-        const matchFile = file.endsWith(mFile) || mFile.endsWith(file) ||
-          path.basename(mFile) === path.basename(file);
-        const matchTheorem = target.theorem === theorem;
-
-        if (matchFile && matchTheorem) {
-          results.push({
-            sessionId: sessionDir,
-            status: m.status || 'unknown',
-            attempts: m.attempts || [],
-            blocker: m.findings?.blocker,
-            nextSteps: m.next_steps,
-            keyLemmas: m.findings?.key_lemmas_used,
-          });
+        const m = JSON.parse(line); const t = m.target || {};
+        const file = (t.file || '').replace(/\\/g, '/'); const theorem = t.theorem || '';
+        if (!file || !theorem) continue;
+        const keys = [`${file}::${theorem}`, `${path.basename(file)}::${theorem}`];
+        const att = Array.isArray(m.attempts) ? m.attempts.length : 0;
+        for (const key of keys) {
+          const ex = result.get(key);
+          if (ex) { ex.totalAttempts += att; ex.latestStatus = m.status || ex.latestStatus; if (!ex.sessions.includes(sd)) ex.sessions.push(sd); if (m.findings?.blocker) ex.blocker = m.findings.blocker; }
+          else result.set(key, { totalAttempts: att, latestStatus: m.status || 'unknown', sessions: [sd], blocker: m.findings?.blocker });
         }
-      } catch { /* ignore parse errors */ }
+      } catch { /* skip */ }
     }
   }
+  return result;
+}
 
+function getMilestonesForNode(archonPath: string, file: string, theorem: string) {
+  const dir = path.join(archonPath, 'proof-journal', 'sessions');
+  if (!fs.existsSync(dir)) return [];
+  const results: any[] = [];
+  for (const sd of fs.readdirSync(dir).filter(d => d.startsWith('session_')).sort()) {
+    const mf = path.join(dir, sd, 'milestones.jsonl');
+    if (!fs.existsSync(mf)) continue;
+    for (const line of fs.readFileSync(mf, 'utf-8').split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const m = JSON.parse(line); const t = m.target || {};
+        const mFile = (t.file || '').replace(/\\/g, '/');
+        if ((file.endsWith(mFile) || mFile.endsWith(file) || path.basename(mFile) === path.basename(file)) && t.theorem === theorem) {
+          results.push({ sessionId: sd, status: m.status || 'unknown', attempts: m.attempts || [], blocker: m.findings?.blocker, nextSteps: m.next_steps, keyLemmas: m.findings?.key_lemmas_used });
+        }
+      } catch { /* skip */ }
+    }
+  }
   return results;
 }
 
-// ── Register routes ──────────────────────────────────────────────────
+/** Only iterations that have snapshot dirs with at least one step-*.lean */
+function getSnapshotIterations(logsPath: string): string[] {
+  if (!fs.existsSync(logsPath)) return [];
+  return fs.readdirSync(logsPath).filter(d => {
+    if (!d.startsWith('iter-')) return false;
+    const sd = path.join(logsPath, d, 'snapshots');
+    if (!fs.existsSync(sd)) return false;
+    for (const slug of fs.readdirSync(sd)) {
+      const p = path.join(sd, slug);
+      if (fs.statSync(p).isDirectory() && fs.readdirSync(p).some(f => f.startsWith('step-') && f.endsWith('.lean'))) return true;
+    }
+    return false;
+  }).sort();
+}
+
+function buildSnapshotTimeline(logsPath: string) {
+  const iters = getSnapshotIterations(logsPath);
+  return iters.map(iterDir => {
+    let timestamp: string | undefined;
+    try { const m = JSON.parse(fs.readFileSync(path.join(logsPath, iterDir, 'meta.json'), 'utf-8')); timestamp = m.completedAt || m.startedAt; } catch { /* */ }
+    const sd = path.join(logsPath, iterDir, 'snapshots');
+    const perFile: Record<string, number> = {};
+    const perDeclaration: Record<string, { hasSorry: boolean; sorryCount: number }> = {};
+    let totalSorry = 0;
+    for (const slug of fs.readdirSync(sd)) {
+      const slugDir = path.join(sd, slug);
+      if (!fs.statSync(slugDir).isDirectory()) continue;
+      const files = fs.readdirSync(slugDir).filter(f => f.endsWith('.lean')).sort();
+      const latest = files[files.length - 1]; if (!latest) continue;
+      try {
+        const content = fs.readFileSync(path.join(slugDir, latest), 'utf-8');
+        const sc = countSorryInLean(content).length;
+        const dn = slug.replace(/_/g, '/') + '.lean';
+        perFile[dn] = sc; totalSorry += sc;
+        for (const d of parseLeanContent(content, dn)) perDeclaration[`${dn}::${d.name}`] = { hasSorry: d.hasSorry, sorryCount: d.sorryCount };
+      } catch { /* */ }
+    }
+    return { iteration: iterDir, timestamp, totalSorry, perFile, perDeclaration };
+  });
+}
+
+function parseDeclarationsAtIteration(logsPath: string, iteration: string) {
+  const sd = path.join(logsPath, iteration, 'snapshots');
+  if (!fs.existsSync(sd)) return { declarations: [], edges: [], files: [] };
+  const allDecls: LeanDeclaration[] = [];
+  for (const slug of fs.readdirSync(sd)) {
+    const slugDir = path.join(sd, slug);
+    if (!fs.statSync(slugDir).isDirectory()) continue;
+    const files = fs.readdirSync(slugDir).filter(f => f.endsWith('.lean')).sort();
+    const latest = files[files.length - 1]; if (!latest) continue;
+    try { allDecls.push(...parseLeanContent(fs.readFileSync(path.join(slugDir, latest), 'utf-8'), slug.replace(/_/g, '/') + '.lean')); } catch { /* */ }
+  }
+  const edges = buildEdges(allDecls);
+  const fg: Record<string, { file: string; declarations: string[] }> = {};
+  for (const d of allDecls) { if (!fg[d.file]) fg[d.file] = { file: d.file, declarations: [] }; fg[d.file].declarations.push(d.name); }
+  return { declarations: allDecls.map(d => ({ id: `${d.file}::${d.name}`, kind: d.kind, name: d.name, file: d.file, line: d.line, hasSorry: d.hasSorry, sorryCount: d.sorryCount, signature: d.signature })), edges, files: Object.values(fg) };
+}
 
 export function register(fastify: FastifyInstance, paths: ProjectPaths) {
   const { projectPath, archonPath, logsPath } = paths;
 
-  // All declarations + edges
   fastify.get('/api/proofgraph/declarations', async () => {
     const allDecls: LeanDeclaration[] = [];
-
-    function walkLean(dir: string) {
-      let entries: fs.Dirent[];
-      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-      for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (['_lake', '.lake', '.archon', 'node_modules', '.git'].includes(entry.name)) continue;
-          walkLean(full);
-        } else if (entry.isFile() && entry.name.endsWith('.lean')) {
-          const rel = path.relative(projectPath, full);
-          allDecls.push(...parseLeanFile(full, rel));
-        }
-      }
-    }
-    walkLean(projectPath);
-
-    const edges = buildDependencyEdges(allDecls);
-
-    // Build file groups
-    const fileGroups: Record<string, { file: string; declarations: string[] }> = {};
-    for (const d of allDecls) {
-      if (!fileGroups[d.file]) {
-        fileGroups[d.file] = { file: d.file, declarations: [] };
-      }
-      fileGroups[d.file].declarations.push(d.name);
-    }
-
+    (function walk(dir: string) {
+      try { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const f = path.join(dir, e.name); if (e.isDirectory()) { if (!['_lake','.lake','.archon','node_modules','.git'].includes(e.name)) walk(f); } else if (e.isFile() && e.name.endsWith('.lean')) allDecls.push(...parseLeanFile(f, path.relative(projectPath, f))); } } catch { /* */ }
+    })(projectPath);
+    const edges = buildEdges(allDecls);
+    const milestones = getAllMilestones(archonPath);
+    const fg: Record<string, { file: string; declarations: string[] }> = {};
+    for (const d of allDecls) { if (!fg[d.file]) fg[d.file] = { file: d.file, declarations: [] }; fg[d.file].declarations.push(d.name); }
     return {
-      declarations: allDecls.map(d => ({
-        id: `${d.file}::${d.name}`,
-        kind: d.kind,
-        name: d.name,
-        file: d.file,
-        line: d.line,
-        hasSorry: d.hasSorry,
-        sorryCount: d.sorryCount,
-        signature: d.signature,
-      })),
-      edges,
-      files: Object.values(fileGroups),
+      declarations: allDecls.map(d => {
+        const id = `${d.file}::${d.name}`;
+        let ms = milestones.get(id);
+        if (!ms) { for (const [k, v] of milestones) { if (k.split('::')[1] === d.name) { ms = v; break; } } }
+        return { id, kind: d.kind, name: d.name, file: d.file, line: d.line, hasSorry: d.hasSorry, sorryCount: d.sorryCount, signature: d.signature, totalAttempts: ms?.totalAttempts ?? 0, latestMilestoneStatus: ms?.latestStatus, milestoneSessions: ms?.sessions ?? [], blocker: ms?.blocker };
+      }),
+      edges, files: Object.values(fg),
     };
   });
 
-  // Sorry timeline across iterations
-  fastify.get('/api/proofgraph/timeline', async () => {
-    return buildSorryTimeline(logsPath, projectPath);
+  fastify.get('/api/proofgraph/timeline', async () => buildSnapshotTimeline(logsPath));
+
+  fastify.get<{ Params: { iteration: string } }>('/api/proofgraph/snapshot/:iteration', async (req, reply) => {
+    const { iteration } = req.params;
+    if (!iteration.startsWith('iter-')) return reply.status(400).send({ error: 'Invalid' });
+    return parseDeclarationsAtIteration(logsPath, iteration);
   });
 
-  // Node detail with milestone history
-  fastify.get<{ Params: { file: string; name: string } }>(
-    '/api/proofgraph/node/:file/:name',
-    async (req) => {
-      const { file, name } = req.params;
-      const decodedFile = decodeURIComponent(file);
-
-      // Find the declaration
-      const fullPath = path.join(projectPath, decodedFile);
-      const decls = parseLeanFile(fullPath, decodedFile);
-      const decl = decls.find(d => d.name === name);
-
-      // Get milestone history
-      const milestones = getMilestonesForNode(archonPath, decodedFile, name);
-
-      return {
-        declaration: decl ? {
-          id: `${decl.file}::${decl.name}`,
-          kind: decl.kind,
-          name: decl.name,
-          file: decl.file,
-          line: decl.line,
-          endLine: decl.endLine,
-          hasSorry: decl.hasSorry,
-          sorryCount: decl.sorryCount,
-          signature: decl.signature,
-          body: decl.body,
-        } : null,
-        milestones,
-      };
-    },
-  );
+  fastify.get<{ Params: { file: string; name: string } }>('/api/proofgraph/node/:file/:name', async (req) => {
+    const file = decodeURIComponent(req.params.file); const { name } = req.params;
+    const decl = parseLeanFile(path.join(projectPath, file), file).find(d => d.name === name);
+    return { declaration: decl ? { id: `${decl.file}::${decl.name}`, kind: decl.kind, name: decl.name, file: decl.file, line: decl.line, endLine: decl.endLine, hasSorry: decl.hasSorry, sorryCount: decl.sorryCount, signature: decl.signature, body: decl.body } : null, milestones: getMilestonesForNode(archonPath, file, name) };
+  });
 }
