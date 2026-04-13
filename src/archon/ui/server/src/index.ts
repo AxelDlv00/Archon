@@ -19,6 +19,7 @@ import { register as registerIterations } from './routes/iterations.js';
 import { register as registerJournal } from './routes/journal.js';
 import { register as registerSummary } from './routes/summary.js';
 import { register as registerSnapshots } from './routes/snapshots.js';
+import { register as registerProofGraph } from './routes/proofgraph.js';
 import type { ProjectPaths } from './routes/project.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -65,6 +66,7 @@ export async function createServer(options: { projectPath: string; port: number 
   registerJournal(fastify, paths);
   registerSummary(fastify, paths);
   registerSnapshots(fastify, paths);
+  registerProofGraph(fastify, paths);
 
   await fastify.listen({ port, host: '0.0.0.0' });
   return fastify;

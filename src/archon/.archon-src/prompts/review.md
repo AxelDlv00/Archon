@@ -74,6 +74,7 @@ Each line MUST follow this JSON format — one entry per target theorem:
       "attempt": 1,
       "strategy": "what was tried",
       "code_tried": "actual Lean code or tactic",
+      "line_number": "line number in the initial file where this code was attempted",
       "lean_error": "actual error message if failed",
       "goal_before": "the goal state before this attempt",
       "goal_after": "the goal state after this attempt",
