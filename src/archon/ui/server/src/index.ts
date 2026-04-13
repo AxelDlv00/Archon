@@ -1,6 +1,3 @@
-/**
- * Archon UI Server — entry point
- */
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import staticFiles from '@fastify/static';
@@ -34,17 +31,10 @@ function parseArgs(): { projectPath: string; port: number } {
 
 export async function createServer(options: { projectPath: string; port: number }) {
   const { projectPath, port } = options;
-
-  const paths: ProjectPaths = {
-    projectPath,
-    archonPath: path.join(projectPath, '.archon'),
-    logsPath: path.join(projectPath, '.archon', 'logs'),
-  };
-
+  const paths: ProjectPaths = { projectPath, archonPath: path.join(projectPath, '.archon'), logsPath: path.join(projectPath, '.archon', 'logs') };
   const fastify = Fastify({ logger: false });
   await fastify.register(cors);
   await fastify.register(websocket);
-
   const clientBuildPath = path.join(__dirname, '../../client/dist');
   if (fs.existsSync(clientBuildPath)) {
     await fastify.register(staticFiles, { root: clientBuildPath, prefix: '/' });
@@ -53,7 +43,6 @@ export async function createServer(options: { projectPath: string; port: number 
       return reply.sendFile('index.html');
     });
   }
-
   registerProject(fastify, paths);
   registerLogs(fastify, paths);
   registerIterations(fastify, paths);
@@ -61,7 +50,6 @@ export async function createServer(options: { projectPath: string; port: number 
   registerSummary(fastify, paths);
   registerSnapshots(fastify, paths);
   registerProofGraph(fastify, paths);
-
   await fastify.listen({ port, host: '0.0.0.0' });
   return fastify;
 }

@@ -6,26 +6,14 @@ async function fetchJson<T>(url: string): Promise<T> {
   return res.json();
 }
 
-// ── Types ────────────────────────────────────────────────────────────
-
 export interface GraphDeclaration {
-  id: string;
-  kind: string;
-  name: string;
-  file: string;
-  line: number;
-  hasSorry: boolean;
-  sorryCount: number;
-  signature: string;
-  // Milestone summary (pre-aggregated on server)
-  totalAttempts: number;
-  latestMilestoneStatus?: string;
-  milestoneSessions: string[];
-  blocker?: string;
+  id: string; kind: string; name: string; file: string; line: number;
+  hasSorry: boolean; sorryCount: number; signature: string;
+  totalAttempts: number; latestMilestoneStatus?: string; milestoneSessions: string[]; blocker?: string;
+  body?: string; // present in snapshot responses
 }
 
 export interface GraphEdge { from: string; to: string; }
-
 export interface GraphFileGroup { file: string; declarations: string[]; }
 
 export interface DeclarationsResponse {
@@ -35,32 +23,24 @@ export interface DeclarationsResponse {
 }
 
 export interface TimelinePoint {
-  iteration: string;
-  timestamp?: string;
-  totalSorry: number;
+  iteration: string; timestamp?: string; totalSorry: number;
   perFile: Record<string, number>;
   perDeclaration: Record<string, { hasSorry: boolean; sorryCount: number }>;
 }
 
 export interface NodeMilestoneInfo {
-  sessionId: string;
-  status: string;
-  attempts: unknown[];
-  blocker?: string;
-  nextSteps?: string;
-  keyLemmas?: string[];
+  sessionId: string; status: string; attempts: unknown[];
+  blocker?: string; nextSteps?: string; keyLemmas?: string[];
 }
 
 export interface NodeDetail {
   declaration: {
     id: string; kind: string; name: string; file: string;
     line: number; endLine: number; hasSorry: boolean; sorryCount: number;
-    signature: string; body: string;  // FULL, never truncated
+    signature: string; body: string;
   } | null;
   milestones: NodeMilestoneInfo[];
 }
-
-// ── Hooks ────────────────────────────────────────────────────────────
 
 export function useProofGraphDeclarations() {
   return useQuery<DeclarationsResponse>({
@@ -78,7 +58,6 @@ export function useProofGraphTimeline() {
   });
 }
 
-/** Declarations at a specific iteration (from snapshot state) */
 export function useProofGraphSnapshot(iteration: string) {
   return useQuery<DeclarationsResponse>({
     queryKey: ['proofgraphSnapshot', iteration],
@@ -87,10 +66,14 @@ export function useProofGraphSnapshot(iteration: string) {
   });
 }
 
-export function useProofGraphNodeDetail(file: string, name: string) {
+/** Node detail — iteration-aware: passes iteration to server for snapshot code + filtered milestones */
+export function useProofGraphNodeDetail(file: string, name: string, iteration?: string) {
+  const url = iteration
+    ? `/api/proofgraph/node/${encodeURIComponent(file)}/${encodeURIComponent(name)}?iteration=${encodeURIComponent(iteration)}`
+    : `/api/proofgraph/node/${encodeURIComponent(file)}/${encodeURIComponent(name)}`;
   return useQuery<NodeDetail>({
-    queryKey: ['proofgraphNode', file, name],
-    queryFn: () => fetchJson(`/api/proofgraph/node/${encodeURIComponent(file)}/${encodeURIComponent(name)}`),
+    queryKey: ['proofgraphNode', file, name, iteration || ''],
+    queryFn: () => fetchJson(url),
     enabled: !!file && !!name,
   });
 }

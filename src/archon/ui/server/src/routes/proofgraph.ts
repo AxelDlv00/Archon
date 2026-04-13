@@ -1,18 +1,10 @@
 /**
- * Proof Graph API — declaration graph, dependency extraction, sorry timeline
+ * Proof Graph API v3
  *
- * Endpoints:
- *   GET /api/proofgraph/declarations
- *     → Current declarations with sorry status + edges + milestone summaries
- *
- *   GET /api/proofgraph/timeline
- *     → Only iterations that have actual snapshots (same set as Diffs)
- *
- *   GET /api/proofgraph/snapshot/:iteration
- *     → Declarations parsed from snapshot state at a given iteration
- *
- *   GET /api/proofgraph/node/:file/:name
- *     → FULL code (never truncated), milestone history, attempt history
+ *   GET /api/proofgraph/declarations        → current project state
+ *   GET /api/proofgraph/timeline            → only snapshot iterations
+ *   GET /api/proofgraph/snapshot/:iteration → declarations from snapshot
+ *   GET /api/proofgraph/node/:file/:name?iteration=  → code + milestones (iteration-aware)
  */
 import fs from 'fs';
 import path from 'path';
@@ -98,11 +90,21 @@ function getAllMilestones(archonPath: string) {
   return result;
 }
 
-function getMilestonesForNode(archonPath: string, file: string, theorem: string) {
+/** Get milestones for a node, optionally filtered to sessions up to a given iteration */
+function getMilestonesForNode(archonPath: string, file: string, theorem: string, maxIteration?: string) {
   const dir = path.join(archonPath, 'proof-journal', 'sessions');
   if (!fs.existsSync(dir)) return [];
   const results: any[] = [];
+  // Determine which sessions to include
+  let maxSessionNum = Infinity;
+  if (maxIteration) {
+    // Iteration iter-003 roughly maps to session_3 (they're created in order)
+    const iterNum = parseInt(maxIteration.replace('iter-', ''), 10);
+    if (!isNaN(iterNum)) maxSessionNum = iterNum;
+  }
   for (const sd of fs.readdirSync(dir).filter(d => d.startsWith('session_')).sort()) {
+    const sessionNum = parseInt(sd.replace('session_', ''), 10);
+    if (!isNaN(sessionNum) && sessionNum > maxSessionNum) continue;
     const mf = path.join(dir, sd, 'milestones.jsonl');
     if (!fs.existsSync(mf)) continue;
     for (const line of fs.readFileSync(mf, 'utf-8').split('\n')) {
@@ -119,7 +121,6 @@ function getMilestonesForNode(archonPath: string, file: string, theorem: string)
   return results;
 }
 
-/** Only iterations that have snapshot dirs with at least one step-*.lean */
 function getSnapshotIterations(logsPath: string): string[] {
   if (!fs.existsSync(logsPath)) return [];
   return fs.readdirSync(logsPath).filter(d => {
@@ -135,8 +136,7 @@ function getSnapshotIterations(logsPath: string): string[] {
 }
 
 function buildSnapshotTimeline(logsPath: string) {
-  const iters = getSnapshotIterations(logsPath);
-  return iters.map(iterDir => {
+  return getSnapshotIterations(logsPath).map(iterDir => {
     let timestamp: string | undefined;
     try { const m = JSON.parse(fs.readFileSync(path.join(logsPath, iterDir, 'meta.json'), 'utf-8')); timestamp = m.completedAt || m.startedAt; } catch { /* */ }
     const sd = path.join(logsPath, iterDir, 'snapshots');
@@ -160,7 +160,8 @@ function buildSnapshotTimeline(logsPath: string) {
   });
 }
 
-function parseDeclarationsAtIteration(logsPath: string, iteration: string) {
+/** Parse snapshot at a specific iteration — returns full body for each decl */
+function parseSnapshotAtIteration(logsPath: string, iteration: string) {
   const sd = path.join(logsPath, iteration, 'snapshots');
   if (!fs.existsSync(sd)) return { declarations: [], edges: [], files: [] };
   const allDecls: LeanDeclaration[] = [];
@@ -174,7 +175,33 @@ function parseDeclarationsAtIteration(logsPath: string, iteration: string) {
   const edges = buildEdges(allDecls);
   const fg: Record<string, { file: string; declarations: string[] }> = {};
   for (const d of allDecls) { if (!fg[d.file]) fg[d.file] = { file: d.file, declarations: [] }; fg[d.file].declarations.push(d.name); }
-  return { declarations: allDecls.map(d => ({ id: `${d.file}::${d.name}`, kind: d.kind, name: d.name, file: d.file, line: d.line, hasSorry: d.hasSorry, sorryCount: d.sorryCount, signature: d.signature })), edges, files: Object.values(fg) };
+  return {
+    declarations: allDecls.map(d => ({
+      id: `${d.file}::${d.name}`, kind: d.kind, name: d.name, file: d.file,
+      line: d.line, hasSorry: d.hasSorry, sorryCount: d.sorryCount, signature: d.signature,
+      body: d.body, // full body from snapshot
+      totalAttempts: 0, latestMilestoneStatus: undefined, milestoneSessions: [] as string[], blocker: undefined,
+    })),
+    edges, files: Object.values(fg),
+  };
+}
+
+/** Find a declaration body from snapshot at a specific iteration */
+function findDeclBodyInSnapshot(logsPath: string, iteration: string, file: string, name: string): string | null {
+  const sd = path.join(logsPath, iteration, 'snapshots');
+  if (!fs.existsSync(sd)) return null;
+  // Derive slug from file: "Foo/Bar.lean" -> "Foo_Bar"
+  const slug = file.replace(/\.lean$/, '').replace(/\//g, '_');
+  const slugDir = path.join(sd, slug);
+  if (!fs.existsSync(slugDir)) return null;
+  const files = fs.readdirSync(slugDir).filter(f => f.endsWith('.lean')).sort();
+  const latest = files[files.length - 1];
+  if (!latest) return null;
+  try {
+    const content = fs.readFileSync(path.join(slugDir, latest), 'utf-8');
+    const decl = parseLeanContent(content, file).find(d => d.name === name);
+    return decl?.body ?? null;
+  } catch { return null; }
 }
 
 export function register(fastify: FastifyInstance, paths: ProjectPaths) {
@@ -205,12 +232,44 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
   fastify.get<{ Params: { iteration: string } }>('/api/proofgraph/snapshot/:iteration', async (req, reply) => {
     const { iteration } = req.params;
     if (!iteration.startsWith('iter-')) return reply.status(400).send({ error: 'Invalid' });
-    return parseDeclarationsAtIteration(logsPath, iteration);
+    return parseSnapshotAtIteration(logsPath, iteration);
   });
 
-  fastify.get<{ Params: { file: string; name: string } }>('/api/proofgraph/node/:file/:name', async (req) => {
-    const file = decodeURIComponent(req.params.file); const { name } = req.params;
-    const decl = parseLeanFile(path.join(projectPath, file), file).find(d => d.name === name);
-    return { declaration: decl ? { id: `${decl.file}::${decl.name}`, kind: decl.kind, name: decl.name, file: decl.file, line: decl.line, endLine: decl.endLine, hasSorry: decl.hasSorry, sorryCount: decl.sorryCount, signature: decl.signature, body: decl.body } : null, milestones: getMilestonesForNode(archonPath, file, name) };
-  });
+  // Node detail: iteration-aware code + milestones
+  fastify.get<{ Params: { file: string; name: string }; Querystring: { iteration?: string } }>(
+    '/api/proofgraph/node/:file/:name',
+    async (req) => {
+      const file = decodeURIComponent(req.params.file);
+      const { name } = req.params;
+      const iteration = req.query.iteration;
+
+      // Get code: from snapshot if iteration specified, else from project
+      let decl: LeanDeclaration | undefined;
+      if (iteration) {
+        const body = findDeclBodyInSnapshot(logsPath, iteration, file, name);
+        if (body !== null) {
+          // Parse the snapshot version
+          const slug = file.replace(/\.lean$/, '').replace(/\//g, '_');
+          const slugDir = path.join(logsPath, iteration, 'snapshots', slug);
+          const files = fs.readdirSync(slugDir).filter(f => f.endsWith('.lean')).sort();
+          const latest = files[files.length - 1];
+          if (latest) {
+            const content = fs.readFileSync(path.join(slugDir, latest), 'utf-8');
+            decl = parseLeanContent(content, file).find(d => d.name === name);
+          }
+        }
+      }
+      if (!decl) {
+        decl = parseLeanFile(path.join(projectPath, file), file).find(d => d.name === name);
+      }
+
+      // Milestones: filter to sessions ≤ iteration
+      const milestones = getMilestonesForNode(archonPath, file, name, iteration);
+
+      return {
+        declaration: decl ? { id: `${decl.file}::${decl.name}`, kind: decl.kind, name: decl.name, file: decl.file, line: decl.line, endLine: decl.endLine, hasSorry: decl.hasSorry, sorryCount: decl.sorryCount, signature: decl.signature, body: decl.body } : null,
+        milestones,
+      };
+    },
+  );
 }
