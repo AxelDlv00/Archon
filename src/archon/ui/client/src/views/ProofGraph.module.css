@@ -1,6 +1,5 @@
 .page { display: flex; flex-direction: column; height: calc(100vh - 80px); overflow: hidden; }
 
-/* Banner */
 .banner { display: flex; align-items: center; gap: 10px; padding: 6px 16px; background: var(--bg-secondary); border-bottom: 1px solid var(--border); flex-shrink: 0; overflow-x: auto; }
 .viewLabel { font-size: 12px; font-weight: 600; color: var(--text-primary); font-family: var(--font-mono); margin-right: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; border: 1px solid; }
@@ -13,27 +12,27 @@
 .zbtn:hover { background: var(--bg-secondary); }
 .zscale { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); min-width: 36px; text-align: center; }
 
-/* Legend */
 .legend { display: flex; align-items: center; gap: 12px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); flex-shrink: 0; font-size: 10px; color: var(--text-muted); }
 .li { display: inline-flex; align-items: center; gap: 4px; }
 .ld { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
 
-/* Main area */
 .main { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 
-/* Graph container — CRITICAL: touch-action:none prevents browser zoom/scroll */
+/* Graph container — viewBox handles zoom/pan inside SVG, no CSS transform */
 .gc {
   flex: 1; position: relative; overflow: hidden; cursor: grab;
-  touch-action: none;
-  -webkit-user-select: none; user-select: none;
+  touch-action: none;            /* prevents ALL browser gesture handling */
+  -webkit-user-select: none;
+  user-select: none;
   background:
-    radial-gradient(circle at 50% 50%, rgba(3,102,214,0.012) 0%, transparent 70%),
-    repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(0,0,0,0.018) 19px, rgba(0,0,0,0.018) 20px),
-    repeating-linear-gradient(90deg, transparent, transparent 19px, rgba(0,0,0,0.018) 19px, rgba(0,0,0,0.018) 20px);
+    radial-gradient(circle at 50% 50%, rgba(3,102,214,0.012) 0%, transparent 70%);
 }
-.svg { display: block; }
+.gc:active { cursor: grabbing; }
 
-/* Detail sidebar */
+/* SVG fills the container; viewBox controls what's visible */
+.svg { display: block; width: 100%; height: 100%; }
+
+/* Sidebar */
 .side { width: 350px; min-width: 310px; border-left: 1px solid var(--border); background: var(--bg-secondary); overflow-y: auto; flex-shrink: 0; }
 .sideEmpty { padding: 32px 16px; text-align: center; color: var(--text-muted); font-size: 12px; }
 .sideHead { padding: 12px 16px; border-bottom: 1px solid var(--border); }
@@ -43,18 +42,14 @@
 .sideMeta { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
 .badge { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px; border: 1px solid; }
 
-/* Code section */
 .codeSection { border-bottom: 1px solid var(--border); }
 .codeHeader { padding: 7px 16px; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; cursor: pointer; display: flex; align-items: center; gap: 5px; }
 .codeHeader:hover { background: var(--bg-tertiary); }
 .codeBlock { padding: 8px 16px; font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--text-secondary); overflow-x: auto; white-space: pre-wrap; word-break: break-word; background: var(--bg-primary); border-top: 1px solid var(--border); }
 
-/* Sparkline */
 .spark { padding: 10px 16px; border-bottom: 1px solid var(--border); }
 .sparkLabel { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 4px; }
-.sparklineSvg { display: block; }
 
-/* Milestones */
 .msSection { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
 .msLabel { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; }
 .msEntry { border-left: 3px solid var(--border); padding: 6px 10px; background: var(--bg-primary); border-radius: 0 4px 4px 0; font-size: 12px; }
@@ -62,7 +57,6 @@
 .msSess { color: var(--text-muted); font-family: var(--font-mono); }
 .msAttempts { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
 
-/* Timeline */
 .tl { flex-shrink: 0; border-top: 1px solid var(--border); background: var(--bg-secondary); padding: 6px 16px 10px; }
 .tlHead { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .tlTitle { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; }
@@ -71,13 +65,12 @@
 .tlChart { position: relative; height: 52px; display: flex; align-items: flex-end; gap: 2px; }
 .tlBar { flex: 1; min-width: 14px; max-width: 50px; border-radius: 3px 3px 0 0; cursor: pointer; position: relative; transition: opacity 0.1s; }
 .tlBar:hover { opacity: 1 !important; filter: brightness(0.88); }
-.tlBarActive { outline: 2px solid var(--blue); outline-offset: -1px; opacity: 1 !important; }
-.tlBarNum { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); pointer-events: none; white-space: nowrap; }
+.tlBarAct { outline: 2px solid var(--blue); outline-offset: -1px; opacity: 1 !important; }
+.tlNum { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); pointer-events: none; }
 .tlLabels { display: flex; gap: 2px; margin-top: 2px; }
-.tlLbl { flex: 1; min-width: 14px; max-width: 50px; font-size: 8px; color: var(--text-muted); text-align: center; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tlLblActive { color: var(--blue); font-weight: 700; }
+.tlLbl { flex: 1; min-width: 14px; max-width: 50px; font-size: 8px; color: var(--text-muted); text-align: center; font-family: var(--font-mono); }
+.tlLblAct { color: var(--blue); font-weight: 700; }
 
-/* Empty / loading */
 .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); gap: 6px; }
 .empty h3 { font-size: 14px; color: var(--text-secondary); }
 .loading { padding: 24px; text-align: center; color: var(--text-muted); }
