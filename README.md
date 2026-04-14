@@ -4,7 +4,7 @@ Archon is an agentic system that autonomously formalizes research-level mathemat
 
 Archon is designed and optimized for **project-level formalization** — multi-file repositories with interdependent theorems, not isolated competition problems. As such, single-problem benchmarks are not a specific optimization target. For model choice, **Opus 4.6 is strongly recommended**; Sonnet also works well but is less capable. Other models have not been tested — weaker models may struggle with the complex skills and prompt structures, in which case Archon's system design could hurt performance rather than help it.                                                          
 
-**Security note:** `archon-loop.sh` runs Claude Code with `--dangerously-skip-permissions --permission-mode bypassPermissions`, meaning the model can execute arbitrary shell commands, read/write any file the process can access, and make network requests — all without asking for confirmation. This is necessary for unattended operation but carries real risk: a misbehaving model could delete files, overwrite code, or run unintended commands. **While Opus 4.6 NEVER caused harm across all of our experiments,** the following measures can further reduce exposure:
+**Security note:** `archon loop` runs Claude Code with `--dangerously-skip-permissions --permission-mode bypassPermissions`, meaning the model can execute arbitrary shell commands, read/write any file the process can access, and make network requests — all without asking for confirmation. This is necessary for unattended operation but carries real risk: a misbehaving model could delete files, overwrite code, or run unintended commands. **While Opus 4.6 NEVER caused harm across all of our experiments,** the following measures can further reduce exposure:
 
 - **Commit and push your project before running Archon, so any unintended changes can be easily reverted.**
 - Run Archon under a **dedicated, low-privilege user** that only has access to the project directory
@@ -14,30 +14,25 @@ Archon is designed and optimized for **project-level formalization** — multi-f
 
 ## Setup
 
-Prerequisites: git, Python 3.10+, curl, elan (Lean toolchain).
-
-**Note:** `archon-loop.sh` runs Claude Code with `--dangerously-skip-permissions`, which Claude Code refuses when running as root on Linux. Two workarounds:
+**Note:** `archon loop` runs Claude Code with `--dangerously-skip-permissions`, which Claude Code refuses when running as root on Linux. Two workarounds:
 1. **Use a non-root account** (RECOMMENDED) (e.g. create one with `adduser`) so you are not running with excessive root privileges.
 2. **Set `export IS_SANDBOX=1`** so Claude Code is allowed to start with this high-risk option.
 
+To install the CLI tools and system dependencies, run the following command in your terminal:
+
 ```bash
-cd /path/where/you/want/Archon
-git clone https://github.com/frenzymath/Archon.git
-cd Archon
-./setup.sh
+curl -sSL https://raw.githubusercontent.com/frenzymath/Archon/refs/heads/main/install.sh | bash
 ```
 
-`setup.sh` installs system-level dependencies (uv, tmux, Claude Code) and verifies your Lean toolchain. It also checks for API keys needed by the informal agent (`OPENAI_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY`) — at least one is recommended but not required.
+*Run `archon --help` for details.*
+
+> **Note**: A good practice is to run this in a Python environment. You need `python3` and `pip` installed on your system.
+
+`archon setup` installs system-level dependencies (uv, tmux, Claude Code) and verifies your Lean toolchain. It also checks for API keys needed by the informal agent (`OPENAI_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY`) — at least one is recommended but not required.
 
 Note: the bundled informal agent is a simplified demonstration — it makes a single API call to an external model for proof sketches. Our internal implementation is more involved but not yet ready for open-sourcing. In practice, the one-shot approach does not show an obvious performance drop, likely because Claude Code performs its own verification and refinement on the returned sketches.
 
 ## Usage
-
-All commands below assume you are inside the Archon directory:
-
-```bash
-cd /path/to/Archon
-```
 
 ### 1. Initialize a project
 
@@ -45,17 +40,17 @@ The project path must point to the directory containing your `lakefile.lean` or 
 
 **Option A — Initialize an existing project**:
 ```bash
-./init.sh /path/to/your-lean-project
+archon init /path/to/your-lean-project
 ```
 
 **Option B — Create a new project in Archon's workspace**:
 ```bash
-./init.sh workspace/my-project
+archon init workspace/my-project
 ```
 
-If no path is given, `init.sh` prompts you for a project name and creates it under `workspace/`.
+If no path is given, `init` prompts you for a project name and creates it.
 
-`init.sh` does the following inside your project:
+`init` does the following inside your project:
 - Creates `.archon/` with runtime state files and symlinked prompts
 - Installs Archon's lean4 skills as the `lean4@archon-local` plugin (live-linked to Archon source)
 - Symlinks the informal agent into `.claude/tools/archon-informal-agent.py`
@@ -68,7 +63,7 @@ Init automatically runs `/archon-lean4:doctor` at the end to verify the full set
 ### 2. Start the automated loop
 
 ```bash
-./archon-loop.sh /path/to/your-lean-project
+archon loop /path/to/your-lean-project
 ```
 
 The loop alternates plan and prover agents through stages:
@@ -81,7 +76,7 @@ The loop alternates plan and prover agents through stages:
 
 **NOTE:** The prover agent is instructed to push formalization as far as possible, so the first few runs typically take **several hours** as it clears all low-hanging fruits. Once only genuinely difficult sorrys remain, each iteration becomes much shorter. To confirm the agent is running, check the latest log in `.archon/logs/archon-<timestamp>.jsonl` in your project directory; the agent also writes Lean files when running, which you can see directly.
 
-The loop exits automatically when the stage reaches `COMPLETE`. You can run `archon-loop.sh` on multiple projects in parallel from separate terminals — each project's state is independent.
+The loop exits automatically when the stage reaches `COMPLETE`. You can run `archon loop` on multiple projects in parallel from separate terminals — each project's state is independent.
 
 ### Guiding agents
 
@@ -121,7 +116,7 @@ Archon ships with a modified fork of [lean4-skills](https://github.com/cameronfr
 
 **Modifying global skills**: You can edit files directly under `Archon/.archon-src/skills/lean4/`. The plugin cache is a symlink back to this directory, so changes take effect on the next Claude Code session in any project. Be aware that this affects all projects.
 
-**Adding new global skills**: Create a new directory under `Archon/.archon-src/skills/<your-skill-name>/` with a `SKILL.md` or `.claude-plugin/plugin.json` inside, and add it to `.archon-src/skills/.claude-plugin/marketplace.json`. Run `./init.sh` again on your project to pick up the new skill.
+**Adding new global skills**: Create a new directory under `Archon/.archon-src/skills/<your-skill-name>/` with a `SKILL.md` or `.claude-plugin/plugin.json` inside, and add it to `.archon-src/skills/.claude-plugin/marketplace.json`. Run `archon init` again on your project to pick up the new skill.
 
 **We encourage you to customize.** If you notice the prover repeatedly making the same mistakes, or a proof strategy that consistently works for your project, codify it — add a skill or adjust a prompt. Archon improves as its skills and prompts accumulate lessons from your specific formalization work.
 
@@ -141,10 +136,10 @@ These are updated automatically by the review agent after each iteration. If the
 
 ### Dashboard
 
-Archon includes a web dashboard for real-time monitoring. Start it alongside `archon-loop.sh`:
+Archon includes a web dashboard for real-time monitoring. Start it alongside `archon loop`:
 
 ```bash
-bash ui/start.sh --project /path/to/your-lean-project
+archon dashboard /path/to/your-lean-project
 ```
 
 The dashboard shows iteration progress, parallel prover status, a file-centric Diffs view backed by recorded code snapshots, agent logs with live streaming, and proof journal milestones — all updating in real time.
@@ -197,7 +192,7 @@ Even rough or incomplete material is valuable — partial references are far bet
 
 ## Standard vs. orchestrator-scheduled mode
 
-`archon-loop.sh` is the **standard mode** — a fixed plan→prover→review loop that runs unattended. It is sufficient for most formalization tasks.
+`archon loop` is the **standard mode** — a fixed plan→prover→review loop that runs unattended. It is sufficient for most formalization tasks.
 
 In our experiments, replacing the fixed loop with an **orchestrator-scheduled mode** — where an outer orchestrator like OpenClaw drives Claude Code directly — yielded stronger results. Instead of following a rigid pipeline, the orchestrator can freely choose when to plan, prove, or review based on the current state, and can supervise the model continuously to prevent premature termination.
 
