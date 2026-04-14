@@ -439,6 +439,9 @@ def loop(
         log.success(f"Project '{project_name}' is COMPLETE. Nothing to do.")
         return
 
+    log.info(f"To visualize progress and logs, run: `archon dashboard {project_path}`")
+    log.info(f"This will launch a local dashboard server with real-time updates.")
+
     loop_start = time.monotonic()
 
     for i in range(max_iterations):
