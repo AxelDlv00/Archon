@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -35,42 +34,40 @@ def _utcnow() -> str:
 
 def _state_dir(project_path: str) -> Path:
     resolved = Path(project_path).resolve()
-    state_dir = resolved / ".archon"
-    if not state_dir.exists():
+    sd = resolved / ".archon"
+    if not sd.exists():
         log.error(f"No .archon/ directory found in {resolved}")
         log.step(f"Run: archon init {project_path}")
         raise typer.Exit(1)
-    return state_dir
+    return sd
 
 
-def _hints_file(state_dir: Path) -> Path:
-    f = state_dir / "USER_HINTS.md"
+def _hints_file(sd: Path) -> Path:
+    f = sd / "USER_HINTS.md"
     if not f.exists():
         f.write_text(_HINTS_HEADER)
     return f
 
 
-def _read_hints(hints_file: Path) -> tuple[str, list[str]]:
+def _read_hints(hf: Path) -> tuple[str, list[str]]:
     """Return (header_block, [hint_line, ...])."""
-    lines = hints_file.read_text().splitlines(keepends=True)
     header_lines: list[str] = []
     hint_lines: list[str] = []
-    for line in lines:
+    for line in hf.read_text().splitlines(keepends=True):
         if _HINT_RE.match(line.rstrip()):
             hint_lines.append(line.rstrip())
         else:
             header_lines.append(line)
-    header = "".join(header_lines).rstrip()
-    return header, hint_lines
+    return "".join(header_lines).rstrip(), hint_lines
 
 
-def _write_hints(hints_file: Path, header: str, hints: list[str]) -> None:
+def _write_hints(hf: Path, header: str, hints: list[str]) -> None:
     body = "\n".join(hints)
-    hints_file.write_text(header + ("\n\n" + body + "\n" if hints else "\n"))
+    hf.write_text(header + ("\n\n" + body + "\n" if hints else "\n"))
 
 
 def _parse_indices(spec: str, max_n: int) -> list[int]:
-    """Parse '2,3,5' or '2-5' or '1,3-5,7' into a sorted list of 1-based indices."""
+    """Parse '2', '2,3,5', '2-5', or '1,3-5,7' into sorted 1-based indices."""
     indices: set[int] = set()
     for part in spec.split(","):
         part = part.strip()
@@ -87,12 +84,10 @@ def _parse_indices(spec: str, max_n: int) -> list[int]:
             except ValueError:
                 log.error(f"Invalid index: '{part}'. Must be a number.")
                 raise typer.Exit(1)
-
     bad = [i for i in indices if not (1 <= i <= max_n)]
     if bad:
         log.error(f"Index/indices out of range: {bad}. Valid range: 1–{max_n}.")
         raise typer.Exit(1)
-
     return sorted(indices)
 
 
@@ -101,51 +96,42 @@ def _parse_indices(spec: str, max_n: int) -> list[int]:
 
 app = typer.Typer(
     help="Manage plan-agent hints in USER_HINTS.md.",
-    invoke_without_command=True,
-    no_args_is_help=False,
+    no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
+    rich_markup_mode="rich",
 )
 
 
-@app.callback(invoke_without_command=True)
-def hint(
-    ctx: typer.Context,
-    hint_text: Optional[str] = typer.Argument(
-        None,
-        help="Hint text to add (adds a plan hint when no subcommand is given).",
-    ),
-    project_path: str = typer.Option(
-        ".", "--project", "-p", help="Path to the Lean project."
-    ),
-) -> None:
+@app.callback()
+def _root() -> None:
     """Manage plan-agent hints in USER_HINTS.md.
 
     The plan agent reads USER_HINTS.md at the start of each iteration,
     acts on every hint, then clears the file automatically.
     Use hints for strategic course corrections between iterations.
 
-    
-    [bold]Subcommands:[/bold]
-      [cyan]archon hint \"...\"[/cyan]            Add a hint
-      [cyan]archon hint show[/cyan]               List current hints (numbered)
-      [cyan]archon hint clear 2,3,5[/cyan]        Remove hints 2, 3 and 5
-      [cyan]archon hint clear 2-5[/cyan]          Remove hints 2 through 5
-      [cyan]archon hint clear 1,3-5,7[/cyan]      Mixed format also works
-      [cyan]archon hint clear all[/cyan]          Remove all hints
+    \b
+    Commands:
+      archon hint add "..."          Add a hint
+      archon hint show               List current hints (numbered)
+      archon hint clear 2,3,5        Remove hints 2, 3 and 5
+      archon hint clear 2-5          Remove hints 2 through 5
+      archon hint clear 1,3-5,7      Mixed format also works
+      archon hint clear all          Remove all hints
 
-    For prover hints (/- USER: ... -/ comments) or permanent prompt edits,
-    modify the files directly:
-      • Prover hints  →  add /- USER: your hint -/ in the .lean file
-      • Prompt edits  →  edit .archon/prompts/*.md
+    \b
+    For prover hints or permanent prompt edits, modify the files directly:
+      Prover hints  ->  add /- USER: your hint -/ in the .lean file
+      Prompt edits  ->  edit .archon/prompts/*.md
     """
-    if ctx.invoked_subcommand is not None:
-        return
 
-    if not hint_text:
-        # No subcommand and no text: show help
-        print(ctx.get_help())
-        return
 
+@app.command("add")
+def hint_add(
+    hint_text: str = typer.Argument(..., help="Hint text to send to the plan agent."),
+    project_path: str = typer.Option(".", "--project", "-p", help="Path to the Lean project."),
+) -> None:
+    """Add a hint for the plan agent."""
     sd = _state_dir(project_path)
     hf = _hints_file(sd)
     header, hints = _read_hints(hf)
@@ -154,17 +140,14 @@ def hint(
     hints.append(entry)
     _write_hints(hf, header, hints)
 
-    n = len(hints)
-    log.success(f"Hint #{n} added:")
+    log.success(f"Hint #{len(hints)} added:")
     log.step(hint_text)
     log.info("The plan agent will act on this at the start of the next iteration.")
 
 
 @app.command("show")
 def hint_show(
-    project_path: str = typer.Option(
-        ".", "--project", "-p", help="Path to the Lean project."
-    ),
+    project_path: str = typer.Option(".", "--project", "-p", help="Path to the Lean project."),
 ) -> None:
     """List current hints, numbered."""
     sd = _state_dir(project_path)
@@ -177,7 +160,6 @@ def hint_show(
 
     log.rule(f"Pending hints ({len(hints)})")
     for i, h in enumerate(hints, 1):
-        # Strip the timestamp for readability, keep the text
         m = _HINT_RE.match(h)
         text = m.group(1) if m else h
         ts_m = re.search(r"\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\]", h)
@@ -189,13 +171,9 @@ def hint_show(
 def hint_clear(
     spec: str = typer.Argument(
         ...,
-        help=(
-            "Hints to remove. Formats: '2', '2,3,5', '2-5', '1,3-5,7', or 'all'."
-        ),
+        help="Hints to remove: '2', '2,3,5', '2-5', '1,3-5,7', or 'all'.",
     ),
-    project_path: str = typer.Option(
-        ".", "--project", "-p", help="Path to the Lean project."
-    ),
+    project_path: str = typer.Option(".", "--project", "-p", help="Path to the Lean project."),
 ) -> None:
     """Remove one or more hints by number.
 
