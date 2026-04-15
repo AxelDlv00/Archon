@@ -51,8 +51,11 @@ def _data_path(sub_path: str = "") -> Path:
 
 
 def _copy_file(src: Path, dst: Path, overwrite: bool = False) -> None:
-    """Copy a single file, skipping if dst exists (unless overwrite)."""
+    """Copy a single file, warning if dst is being overwritten."""
     dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists() and overwrite:
+        log.warn(f"Overwriting existing file: {dst.name}")
+    
     if overwrite or not dst.exists():
         shutil.copy2(src, dst)
 
@@ -94,7 +97,7 @@ def _update_gitignore(project_path: Path, entry: str) -> None:
 # ── steps ─────────────────────────────────────────────────────────────
 
 
-def _step1_state_dir(project_path: Path, state_dir: Path) -> None:
+def _step1_state_dir(project_path: Path, state_dir: Path, overwrite: bool = True) -> None:
     """Create .archon/ state directory and populate with template files."""
     log.phase(1, "Setting up .archon/ state directory")
 
@@ -113,17 +116,26 @@ def _step1_state_dir(project_path: Path, state_dir: Path) -> None:
     for name in ("PROGRESS.md", "CLAUDE.md", "USER_HINTS.md", "task_pending.md", "task_done.md"):
         src = template_dir / name
         if src.exists():
-            _copy_file(src, state_dir / name)
+            _copy_file(src, state_dir / name, overwrite=overwrite)
             copied += 1
         else:
             log.warn(f"Template not found: {name}")
     log.step(f"Copied {copied} template file(s)")
 
+    refactor_directive = state_dir / "REFACTOR_DIRECTIVE.md"
+    if not refactor_directive.exists():
+        refactor_directive.write_text(
+            "# Refactor Directive\n\n"
+            "<!-- Plan agent: write your refactoring directive here. -->\n"
+            "<!-- The refactor agent will execute it at the start of the next iteration. -->\n"
+            "<!-- This file is cleared after each refactor run. -->\n"
+        )
+
     _update_gitignore(project_path, ".archon/")
     log.success("State directory ready")
 
 
-def _step2_copy_prompts(state_dir: Path) -> None:
+def _step2_copy_prompts(state_dir: Path, overwrite: bool =True) -> None:
     """Copy prompt files into .archon/prompts/."""
     log.phase(2, "Copying prompts")
 
@@ -137,7 +149,7 @@ def _step2_copy_prompts(state_dir: Path) -> None:
 
     count = 0
     for f in sorted(prompts_src.glob("*.md")):
-        _copy_file(f, prompts_dst / f.name)
+        _copy_file(f, prompts_dst / f.name, overwrite=overwrite)
         count += 1
 
     log.success(f"Copied {count} prompt(s) to .archon/prompts/")

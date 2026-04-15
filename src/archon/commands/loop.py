@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,7 @@ from archon.runner import (
     build_parallel_prover_prompt,
     build_plan_prompt,
     build_prover_prompt,
+    build_refactor_prompt,
     build_review_prompt,
     run_claude,
 )
@@ -54,6 +56,131 @@ def _relpath(path: Path, base: Path) -> str:
 
 def _file_slug(rel: str) -> str:
     return rel.replace("/", "_").replace(os.sep, "_").removesuffix(".lean")
+
+
+# ── sorry counting ───────────────────────────────────────────────────
+
+
+def _count_sorries(project_path: Path) -> int | None:
+    """Count sorries using the bundled sorry_analyzer, or fallback to grep."""
+    analyzer = _data_path("skills/lean4/lib/scripts/sorry_analyzer.py")
+    if analyzer.exists():
+        try:
+            r = subprocess.run(
+                [sys.executable, str(analyzer), str(project_path), "--format=summary"],
+                capture_output=True, text=True, timeout=60,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                last_line = r.stdout.strip().splitlines()[-1]
+                m = re.search(r"(\d+)", last_line)
+                if m:
+                    return int(m.group(1))
+        except Exception:
+            pass
+
+    # Fallback: grep
+    try:
+        r = subprocess.run(
+            ["bash", "-c",
+             "find " + str(project_path) + " -name '*.lean' -not -path '*/.lake/*' "
+             "-not -path '*/lake-packages/*' "
+             "| xargs grep -c 'sorry' 2>/dev/null "
+             "| grep -v ':0$' | awk -F: '{s+=$2} END {print s}'"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return int(r.stdout.strip())
+    except Exception:
+        pass
+
+    return None
+
+
+# ── environment checks ────────────────────────────────────────────────
+
+
+def _check_informal_agent_keys() -> None:
+    """Warn once if no API keys are set for the informal agent."""
+    keys = ("OPENAI_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY")
+    if not any(os.environ.get(k) for k in keys):
+        log.warn("No API keys for informal agent (OPENAI_API_KEY / GEMINI_API_KEY / OPENROUTER_API_KEY)")
+        log.step("Provers will work without it, but may struggle on hard sorries where external LLM help would be useful.")
+
+
+# ── refactor phase ────────────────────────────────────────────────────
+
+
+def _read_refactor_directive(state_dir: Path) -> str | None:
+    """Read and return the refactor directive if present and non-empty."""
+    directive_file = state_dir / "REFACTOR_DIRECTIVE.md"
+    if not directive_file.exists():
+        return None
+    content = directive_file.read_text().strip()
+    # Ignore placeholder content
+    if not content:
+        return None
+    # Check if it's just the empty template
+    lines = [l.strip() for l in content.splitlines() if l.strip() and not l.strip().startswith("<!--")]
+    non_header = [l for l in lines if not l.startswith("#")]
+    if not non_header:
+        return None
+    return content
+
+
+def _clear_refactor_directive(state_dir: Path) -> None:
+    """Clear the refactor directive after execution."""
+    directive_file = state_dir / "REFACTOR_DIRECTIVE.md"
+    if directive_file.exists():
+        directive_file.write_text(
+            "# Refactor Directive\n\n"
+            "<!-- Plan agent: write your refactoring directive here. -->\n"
+            "<!-- The refactor agent will execute it at the start of the next iteration. -->\n"
+            "<!-- This file is cleared after each refactor run. -->\n"
+        )
+
+
+def _run_refactor_phase(
+    project_name: str,
+    project_path: Path,
+    state_dir: Path,
+    directive: str,
+    iter_dir: Path,
+    iter_meta: Path,
+    verbose_logs: bool,
+) -> bool:
+    """Run the refactor agent. Returns True if successful."""
+    log.phase(2, "Refactor agent")
+    log.info("Plan agent requested structural changes")
+
+    # Show a preview of the directive
+    directive_lines = directive.strip().splitlines()
+    preview_lines = [l.strip() for l in directive_lines
+                     if l.strip() and not l.strip().startswith("#") and not l.strip().startswith("<!--")]
+    for line in preview_lines[:5]:
+        log.step(line)
+    if len(preview_lines) > 5:
+        log.step("... (%d more lines)" % (len(preview_lines) - 5))
+
+    write_meta(iter_meta, **{"refactor.status": "running"})
+
+    refactor_start = time.monotonic()
+    prompt = build_refactor_prompt(project_name, project_path, state_dir, directive)
+    refactor_log = iter_dir / "refactor"
+    ok = run_claude(prompt, cwd=project_path, log_base=refactor_log, verbose_logs=verbose_logs)
+    refactor_secs = int(time.monotonic() - refactor_start)
+
+    write_meta(iter_meta, **{
+        "refactor.status": "done" if ok else "error",
+        "refactor.durationSecs": refactor_secs,
+    })
+
+    if ok:
+        log.success("Refactor agent finished (%ds)" % refactor_secs)
+    else:
+        log.error("Refactor agent failed (%ds)" % refactor_secs)
+
+    _clear_refactor_directive(state_dir)
+    return ok
 
 
 # ── snapshot helpers ──────────────────────────────────────────────────
@@ -263,7 +390,7 @@ def _run_parallel_provers(
             snap_dir = iter_dir / "snapshots" / slug
             _snapshot_baseline(f, snap_dir)
 
-            log.step(f"Starting prover for {rel} (log: provers/{slug}.jsonl)")
+            log.step(f"Starting prover for {rel}")
             write_meta(iter_meta, **{f"provers.{slug}.file": rel, f"provers.{slug}.status": "running"})
 
             future = pool.submit(
@@ -287,20 +414,20 @@ def _run_parallel_provers(
             status = "done" if ok else "error"
             write_meta(iter_meta, **{f"provers.{slug}.status": status})
             if ok:
-                log.info(f"  Prover for {rel} finished")
+                log.success(f"Prover finished: {rel}")
             else:
-                log.warn(f"  Prover for {rel} had errors")
+                log.error(f"Prover failed: {rel}")
                 failed += 1
 
     if failed:
         log.warn(f"{failed}/{file_count} prover(s) had errors")
     else:
-        log.success(f"All {file_count} prover(s) finished successfully")
+        log.success(f"All {file_count} prover(s) finished")
 
     # Report task results
     results_dir = state_dir / "task_results"
     result_count = len(list(results_dir.glob("*.md"))) if results_dir.exists() else 0
-    log.info(f"Found {result_count}/{file_count} task result file(s)")
+    log.info(f"Task result files: {result_count}/{file_count}")
 
     # Emit parallel round event for dashboard consumption
     _emit_parallel_round_end(iter_dir, file_count, failed)
@@ -327,7 +454,7 @@ def _run_review_phase(
     current_session_dir.mkdir(parents=True, exist_ok=True)
 
     # Extract attempt data from prover logs
-    log.info("Extracting attempt data from prover logs...")
+    log.step("Extracting attempt data from prover logs...")
     provers_dir = iter_dir / "provers"
     if provers_dir.exists() and list(provers_dir.glob("*.jsonl")):
         combined = iter_dir / "provers-combined.jsonl"
@@ -388,6 +515,10 @@ def loop(
         False, "--no-review",
         help="Skip review phase after each iteration.",
     ),
+    no_refactor: bool = typer.Option(
+        False, "--no-refactor",
+        help="Skip the refactor phase even if a directive exists.",
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run",
         help="Print prompts without launching Claude.",
@@ -397,6 +528,9 @@ def loop(
 
     Alternates plan and prover agents through stages (autoformalize → prover
     → polish) until COMPLETE or max iterations reached.
+
+    When the plan agent writes a REFACTOR_DIRECTIVE.md, a refactor agent runs
+    between plan and prover to restructure definitions across files.
     """
     resolved = Path(project_path).resolve()
     project_name = resolved.name
@@ -425,6 +559,7 @@ def loop(
         "Max iterations": str(max_iterations),
         "Prover mode": prover_mode,
         "Review": "enabled" if not no_review else "disabled",
+        "Refactor": "enabled" if not no_refactor else "disabled",
         "Logs": str(log_dir),
         "User hints": str(state_dir / "USER_HINTS.md"),
     }
@@ -438,10 +573,21 @@ def loop(
         log.success(f"Project '{project_name}' is COMPLETE. Nothing to do.")
         return
 
+    # ── environment checks ────────────────────────────────────────────
+
+    if not dry_run:
+        _check_informal_agent_keys()
+
+    # ── initial sorry count ───────────────────────────────────────────
+
+    initial_sorry = _count_sorries(resolved) if not dry_run else None
+    if initial_sorry is not None:
+        log.info(f"Starting sorry count: {initial_sorry}")
+
     log.info(f"To visualize progress and logs, run: `archon dashboard {project_path}`")
-    log.info(f"This will launch a local dashboard server with real-time updates.")
 
     loop_start = time.monotonic()
+    prev_sorry = initial_sorry
 
     for i in range(max_iterations):
         current_stage = read_stage(progress_file, force_stage)
@@ -472,7 +618,7 @@ def loop(
                 startedAt=utcnow_iso(),
             )
             write_meta(iter_meta, **{"plan.status": "running"})
-            log.info(f"Log dir: {iter_dir}")
+            log.step(f"Log dir: {iter_dir}")
 
         # ── Phase 1: Plan ──
         log.phase(1, "Plan agent")
@@ -488,7 +634,7 @@ def loop(
             run_claude(plan_prompt, cwd=resolved, log_base=plan_log, verbose_logs=verbose_logs)
 
         plan_secs = int(time.monotonic() - plan_start)
-        log.info(f"Plan phase finished. ({plan_secs}s)")
+        log.info(f"Plan phase finished ({plan_secs}s)")
         if not dry_run:
             write_meta(iter_meta, **{"plan.status": "done", "plan.durationSecs": plan_secs})
 
@@ -498,8 +644,34 @@ def loop(
 
         current_stage = read_stage(progress_file, force_stage)
 
-        # ── Phase 2: Prover ──
-        log.phase(2, f"Prover agent(s) — {'parallel' if parallel else 'serial'}")
+        # ── Phase 2 (conditional): Refactor ──
+        if not no_refactor and not dry_run:
+            directive = _read_refactor_directive(state_dir)
+            if directive:
+                refactor_ok = _run_refactor_phase(
+                    project_name, resolved, state_dir, directive,
+                    iter_dir, iter_meta, verbose_logs,
+                )
+
+                # Re-run plan agent to verify refactor and update objectives
+                log.step("Re-running plan agent to verify refactor results...")
+                plan_prompt = build_plan_prompt(project_name, resolved, state_dir, current_stage)
+                plan_log2 = iter_dir / "plan-post-refactor"
+                run_claude(plan_prompt, cwd=resolved, log_base=plan_log2, verbose_logs=verbose_logs)
+
+                # Check sorry count after refactor
+                sorry_after_refactor = _count_sorries(resolved)
+                if sorry_after_refactor is not None:
+                    log.info(f"Sorry count after refactor: {sorry_after_refactor}")
+
+                if is_complete(progress_file, force_stage):
+                    log.success("Plan agent set stage to COMPLETE after refactor. Exiting loop.")
+                    break
+
+                current_stage = read_stage(progress_file, force_stage)
+
+        # ── Phase 3: Prover ──
+        log.phase(3, f"Prover agent(s) — {'parallel' if parallel else 'serial'}")
 
         prover_start = time.monotonic()
         if not dry_run:
@@ -541,13 +713,13 @@ def loop(
                     _unset_prover_env(old_env)
 
         prover_secs = int(time.monotonic() - prover_start)
-        log.info(f"Prover phase finished. ({prover_secs}s)")
+        log.info(f"Prover phase finished ({prover_secs}s)")
         if not dry_run:
             write_meta(iter_meta, **{"prover.status": "done", "prover.durationSecs": prover_secs})
 
-        # ── Phase 3: Review ──
+        # ── Phase 4: Review ──
         if not no_review and not dry_run:
-            log.phase(3, "Review agent")
+            log.phase(4, "Review agent")
 
             review_start = time.monotonic()
             write_meta(iter_meta, **{"review.status": "running"})
@@ -558,11 +730,29 @@ def loop(
             )
 
             review_secs = int(time.monotonic() - review_start)
-            log.info(f"Review phase finished. ({review_secs}s)")
+            log.info(f"Review phase finished ({review_secs}s)")
             write_meta(iter_meta, **{"review.status": "done", "review.durationSecs": review_secs})
 
+        # ── Post-iteration: sorry count ───────────────────────────────
+
+        if not dry_run:
+            sorry_after = _count_sorries(resolved)
+            if sorry_after is not None:
+                write_meta(iter_meta, sorry_count=sorry_after)
+                if prev_sorry is not None:
+                    delta = prev_sorry - sorry_after
+                    if delta > 0:
+                        log.success(f"Sorry count: {prev_sorry} -> {sorry_after} ({delta} resolved this iteration)")
+                    elif delta == 0:
+                        log.warn(f"Sorry count unchanged: {sorry_after}")
+                    else:
+                        log.info(f"Sorry count: {prev_sorry} -> {sorry_after} ({-delta} new — likely from refactoring)")
+                else:
+                    log.info(f"Sorry count: {sorry_after}")
+                prev_sorry = sorry_after
+
         iter_secs = int(time.monotonic() - iter_start)
-        log.info(f"Iteration {i + 1} complete. Wall time: {iter_secs}s")
+        log.info(f"Iteration {i + 1} complete ({iter_secs}s)")
         if not dry_run:
             write_meta(iter_meta, completedAt=utcnow_iso(), wallTimeSecs=iter_secs)
             data = cost_summary(iter_dir)
@@ -573,9 +763,21 @@ def loop(
                     data.model_rows() or None,
                 )
 
+    # ── Loop summary ──────────────────────────────────────────────────
+
     loop_secs = int(time.monotonic() - loop_start)
+
     if not is_complete(progress_file, force_stage):
         log.warn(f"Reached max iterations ({max_iterations}). Stopping.")
+
+    if not dry_run:
+        final_sorry = _count_sorries(resolved)
+        if final_sorry is not None and initial_sorry is not None:
+            resolved_count = initial_sorry - final_sorry
+            log.info(f"Sorries: {initial_sorry} -> {final_sorry} ({resolved_count} resolved)")
+        elif final_sorry is not None:
+            log.info(f"Final sorry count: {final_sorry}")
+
     log.info(f"Total wall time: {loop_secs}s")
     data = cost_summary(log_dir)
     if data:
