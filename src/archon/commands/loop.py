@@ -38,7 +38,6 @@ from archon.state import (
 )
 from archon.types import Stage
 
-
 def _data_path(sub_path: str = "") -> Path:
     root = resources.files("archon").joinpath(".archon-src")
     if sub_path:

@@ -1,0 +1,18 @@
+"""Update Archon by re-running the remote install script."""
+
+import subprocess
+
+from archon import log
+
+
+def update() -> None:
+    """Update Archon to the latest version."""
+    log.step("Fetching and running the Archon install script...")
+    r = subprocess.run(
+        ["bash", "-c", "curl -sSL https://raw.githubusercontent.com/AxelDlv00/Archon/refs/heads/main/install.sh | bash"],
+        text=True,
+    )
+    if r.returncode != 0:
+        log.error("Update failed — the install script exited with an error.")
+        raise SystemExit(r.returncode)
+    log.success("Archon updated successfully.")

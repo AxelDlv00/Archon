@@ -22,16 +22,20 @@ Once installed, use the `archon` command to interact with the tools.
 1. **`archon setup`** : Install system-level dependencies.
 2. **`archon init .`** : Initialize a new project with Lean 4.
 3. **`archon loop .`** : Start the automated plan → prove → review loop.
-4. **`archon dashboard .`** : Start the web dashboard for real-time monitoring.
+4. **`archon discuss .`** : Discuss project state, understand blockers, provide hints.
+5. **`archon dashboard .`** : Start the web dashboard for real-time monitoring.
 
 ### Commands Summary
 | Command | Description |
 | :--- | :--- |
 | `init` | Initialize a new Archon project. |
 | `loop` | Start the automated formalization loop. |
+| `discuss` | Interactive discussion: inspect goals, search lemmas, record hints. |
 | `doctor` | Verify the full Archon setup and health. |
 | `dashboard` | Start the web monitoring interface. |
 | `prove` | Directly prove an inline statement. |
+| `hint` | Manage plan-agent hints in USER_HINTS.md. |
 | `setup` | Install required system dependencies. |
+| `update` | Update Archon to the latest version. |
 
 *Run `archon --help` for details.*

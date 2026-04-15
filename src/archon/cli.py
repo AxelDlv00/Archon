@@ -21,18 +21,18 @@ class _BannerGroup(typer.core.TyperGroup):
         log.banner(__version__)
         super().format_help(ctx, formatter)
 
-        # ── Examples panel ────────────────────────────────────
+        # ── Remark panel ──────────────────────────────────────
         
         console = Console()
 
-        # ── Remark panel ──────────────────────────────────────
         remark = (
             "If you don't know where to start, the typical workflow is:\n\n"
             "  [bold cyan]1.[/bold cyan] archon setup       → install system dependencies\n"
             "  [bold cyan]2.[/bold cyan] cd project/dir     → navigate to your project directory\n"
             "  [bold cyan]3.[/bold cyan] archon init .      → create a project and initialize it with Lean 4\n"
             "  [bold cyan]4.[/bold cyan] archon loop        → run autonomous formalization\n"
-            "  [bold cyan]5.[/bold cyan] archon dashboard . → visualize agent activity and project status\n\n"
+            "  [bold cyan]5.[/bold cyan] archon discuss .   → understand blockers and provide hints\n"
+            "  [bold cyan]6.[/bold cyan] archon dashboard . → visualize agent activity and project status\n\n"
             "[dim]Run [bold]archon <command> -h[/bold] for details on any command.[/dim]"
         )
         console.print(Panel(
@@ -83,6 +83,8 @@ from archon.commands.dashboard import dashboard  # noqa: E402
 from archon.commands.setup import setup  # noqa: E402
 from archon.commands.prove import prove  # noqa: E402
 from archon.commands.hint import hint  # noqa: E402
+from archon.commands.update import update  # noqa: E402
+from archon.commands.discuss import discuss  # noqa: E402
 
 app.command()(init)
 app.command()(loop)
@@ -91,6 +93,8 @@ app.command()(dashboard)
 app.command()(prove)
 app.command()(setup)
 app.command()(hint)
+app.command()(update)
+app.command()(discuss)
 
 if __name__ == "__main__":
     app()
