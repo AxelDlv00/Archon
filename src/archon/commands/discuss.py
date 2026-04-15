@@ -158,7 +158,7 @@ FOCUS: The mathematician wants to discuss **{focus}** specifically.
 
     sorry_analyzer_path = _data_path("skills/lean4/lib/scripts/sorry_analyzer.py")
 
-    prompt = textwrap.dedent(f"""
+    prompt = textwrap.dedent(f"""\
 You are an Archon discussion advisor for project '{project_name}'.
 The mathematician wants to understand the current state of the project,
 ask questions about blockers, and provide mathematical insights.
@@ -221,6 +221,8 @@ Rules for writing hints:
 - **Always confirm with the mathematician before writing.** Show the exact hint text
   you intend to write, let them adjust, then write it only after they approve.
 
+This format is compatible with `archon hint show` and `archon hint clear`.
+
 ## Current project state (pre-loaded)
 
 ### PROGRESS.md
@@ -238,7 +240,7 @@ Rules for writing hints:
 ### task_done.md (completed theorems)
 {task_done if task_done else "(empty)"}
 
-{f"### Latest proof journal\n\n{journal_summary}" if journal_summary else ""}
+{("### Latest proof journal" + chr(10) + chr(10) + journal_summary) if journal_summary else ""}
 
 ### USER_HINTS.md (pending hints)
 {user_hints if user_hints else "(no pending hints)"}
