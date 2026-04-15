@@ -113,23 +113,21 @@ def _step1_state_dir(project_path: Path, state_dir: Path, overwrite: bool = True
 
     template_dir = _data_path("archon-template")
     copied = 0
-    for name in ("PROGRESS.md", "CLAUDE.md", "USER_HINTS.md", "task_pending.md", "task_done.md"):
+    for name, ovrw in (
+        ("PROGRESS.md", False),
+        ("CLAUDE.md", overwrite),
+        ("USER_HINTS.md", False),
+        ("task_pending.md", False),
+        ("task_done.md", False),
+        ("REFACTOR_DIRECTIVE.md", False),
+    ):
         src = template_dir / name
         if src.exists():
-            _copy_file(src, state_dir / name, overwrite=overwrite)
+            _copy_file(src, state_dir / name, overwrite=ovrw)
             copied += 1
         else:
             log.warn(f"Template not found: {name}")
     log.step(f"Copied {copied} template file(s)")
-
-    refactor_directive = state_dir / "REFACTOR_DIRECTIVE.md"
-    if not refactor_directive.exists():
-        refactor_directive.write_text(
-            "# Refactor Directive\n\n"
-            "<!-- Plan agent: write your refactoring directive here. -->\n"
-            "<!-- The refactor agent will execute it at the start of the next iteration. -->\n"
-            "<!-- This file is cleared after each refactor run. -->\n"
-        )
 
     _update_gitignore(project_path, ".archon/")
     log.success("State directory ready")

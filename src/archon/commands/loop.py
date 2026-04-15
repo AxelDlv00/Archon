@@ -13,6 +13,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from importlib import resources
 from pathlib import Path
+from textwrap import dedent
 from typing import Optional
 
 import typer
@@ -137,6 +138,28 @@ def _clear_refactor_directive(state_dir: Path) -> None:
             "<!-- The refactor agent will execute it at the start of the next iteration. -->\n"
             "<!-- This file is cleared after each refactor run. -->\n"
         )
+
+
+def _build_post_refactor_plan_prompt(
+    project_name: str, project_path: Path, state_dir: Path, stage: str,
+) -> str:
+    """Build a plan prompt for the post-refactor verification pass."""
+    return dedent(f"""\
+        You are the plan agent for project '{project_name}'. Current stage: {stage}.
+        Project directory: {project_path}
+        Project state directory: {state_dir}
+        Read {state_dir}/CLAUDE.md for your role, then read {state_dir}/prompts/plan.md and {state_dir}/PROGRESS.md.
+        All state files (PROGRESS.md, task_pending.md, task_done.md, USER_HINTS.md, task_results/) are in {state_dir}/.
+        The .lean files are in {project_path}/.
+
+        IMPORTANT — POST-REFACTOR VERIFICATION PASS:
+        The refactor agent has just run. Read {state_dir}/task_results/refactor.md FIRST
+        to understand what changed. Then follow the "Post-Refactor Verification" section
+        in your prompt (plan.md).
+
+        CRITICAL: Do NOT write a new REFACTOR_DIRECTIVE.md in this pass. The refactor
+        loop runs at most once per iteration. If further refactoring is needed, document
+        it in task_pending.md — it will be addressed in the next iteration.""")
 
 
 def _run_refactor_phase(
@@ -289,10 +312,7 @@ def _run_single_prover(
     snap_dir: Path | None = None,
     project_path: Path | None = None,
 ) -> bool:
-    """Entry point for a single prover (may run in subprocess).
-
-    Sets ARCHON env vars for the duration of the prover run.
-    """
+    """Entry point for a single prover (may run in subprocess)."""
     if snap_dir is not None and project_path is not None:
         old_env = _set_prover_env(
             snap_dir=snap_dir,
@@ -334,7 +354,6 @@ def _run_parallel_provers(
 
     file_count = len(sorry_files)
 
-    # Dry run check before anything else
     if dry_run:
         for f in sorry_files:
             rel = _relpath(f, project_path)
@@ -350,11 +369,9 @@ def _run_parallel_provers(
         prover_log = iter_dir / "provers" / slug
         write_meta(iter_meta, **{f"provers.{slug}.file": rel, f"provers.{slug}.status": "running"})
 
-        # Snapshot baseline
         snap_dir = iter_dir / "snapshots" / slug
         _snapshot_baseline(sorry_files[0], snap_dir)
 
-        # Set env vars and run
         old_env = _set_prover_env(
             snap_dir=snap_dir,
             prover_jsonl=Path(str(prover_log) + ".jsonl"),
@@ -377,7 +394,6 @@ def _run_parallel_provers(
     log.step(f"tail -f {iter_dir}/provers/*.jsonl")
     log.step(f"watch -n10 'ls -lt {state_dir}/task_results/'")
 
-    # Launch provers with ProcessPoolExecutor
     futures = {}
     with ProcessPoolExecutor(max_workers=min(max_parallel, file_count)) as pool:
         for f in sorry_files:
@@ -386,7 +402,6 @@ def _run_parallel_provers(
             prover_log = iter_dir / "provers" / slug
             prompt = f"{base_prompt}\nYour assigned file: {rel}"
 
-            # Snapshot baseline
             snap_dir = iter_dir / "snapshots" / slug
             _snapshot_baseline(f, snap_dir)
 
@@ -424,12 +439,10 @@ def _run_parallel_provers(
     else:
         log.success(f"All {file_count} prover(s) finished")
 
-    # Report task results
     results_dir = state_dir / "task_results"
     result_count = len(list(results_dir.glob("*.md"))) if results_dir.exists() else 0
     log.info(f"Task result files: {result_count}/{file_count}")
 
-    # Emit parallel round event for dashboard consumption
     _emit_parallel_round_end(iter_dir, file_count, failed)
 
 
@@ -453,7 +466,6 @@ def _run_review_phase(
     session_dir.mkdir(parents=True, exist_ok=True)
     current_session_dir.mkdir(parents=True, exist_ok=True)
 
-    # Extract attempt data from prover logs
     log.step("Extracting attempt data from prover logs...")
     provers_dir = iter_dir / "provers"
     if provers_dir.exists() and list(provers_dir.glob("*.jsonl")):
@@ -471,7 +483,6 @@ def _run_review_phase(
             capture_output=True,
         )
 
-    # Run review agent
     prompt = build_review_prompt(
         project_name, project_path, state_dir, stage,
         session_num, session_dir, attempts_file, combined,
@@ -479,7 +490,6 @@ def _run_review_phase(
     review_log = iter_dir / "review"
     run_claude(prompt, cwd=project_path, log_base=review_log, verbose_logs=verbose_logs)
 
-    # Validate review output
     validate_script = _data_path("scripts/validate-review.py") if _data_path("scripts/validate-review.py").exists() else None
     if validate_script and validate_script.exists():
         subprocess.run(
@@ -648,16 +658,27 @@ def loop(
         if not no_refactor and not dry_run:
             directive = _read_refactor_directive(state_dir)
             if directive:
-                refactor_ok = _run_refactor_phase(
+                _run_refactor_phase(
                     project_name, resolved, state_dir, directive,
                     iter_dir, iter_meta, verbose_logs,
                 )
 
-                # Re-run plan agent to verify refactor and update objectives
+                # Re-run plan agent in post-refactor verification mode
                 log.step("Re-running plan agent to verify refactor results...")
-                plan_prompt = build_plan_prompt(project_name, resolved, state_dir, current_stage)
+                post_refactor_prompt = _build_post_refactor_plan_prompt(
+                    project_name, resolved, state_dir, current_stage,
+                )
                 plan_log2 = iter_dir / "plan-post-refactor"
-                run_claude(plan_prompt, cwd=resolved, log_base=plan_log2, verbose_logs=verbose_logs)
+                run_claude(post_refactor_prompt, cwd=resolved, log_base=plan_log2, verbose_logs=verbose_logs)
+
+                # Anti-loop guard: if the post-refactor plan agent wrote ANOTHER
+                # directive (despite being told not to), clear it and log a warning.
+                # It will get another chance in the next iteration.
+                rogue_directive = _read_refactor_directive(state_dir)
+                if rogue_directive:
+                    log.warn("Post-refactor plan agent wrote another REFACTOR_DIRECTIVE.md — "
+                             "clearing it to prevent infinite loop. It will be reconsidered next iteration.")
+                    _clear_refactor_directive(state_dir)
 
                 # Check sorry count after refactor
                 sorry_after_refactor = _count_sorries(resolved)
@@ -690,7 +711,6 @@ def loop(
             else:
                 prover_log = iter_dir / "prover"
 
-                # Snapshot baseline for all target files in serial mode
                 sorry_files = parse_objective_files(progress_file, resolved)
                 if sorry_files:
                     for sf in sorry_files:
@@ -699,8 +719,6 @@ def loop(
                         ssnap = iter_dir / "snapshots" / sslug
                         _snapshot_baseline(sf, ssnap)
 
-                # Serial prover edits multiple files — set ARCHON_SNAPSHOT_DIR
-                # to the snapshots root; snapshot.py derives the subdir
                 old_env = _set_prover_env(
                     snap_dir=iter_dir / "snapshots",
                     prover_jsonl=Path(str(prover_log) + ".jsonl"),
