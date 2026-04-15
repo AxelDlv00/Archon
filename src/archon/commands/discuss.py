@@ -158,7 +158,7 @@ FOCUS: The mathematician wants to discuss **{focus}** specifically.
 
     sorry_analyzer_path = _data_path("skills/lean4/lib/scripts/sorry_analyzer.py")
 
-    prompt = textwrap.dedent(f"""\
+    prompt = textwrap.dedent(f"""
 You are an Archon discussion advisor for project '{project_name}'.
 The mathematician wants to understand the current state of the project,
 ask questions about blockers, and provide mathematical insights.
