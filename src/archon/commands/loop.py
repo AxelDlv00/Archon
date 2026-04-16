@@ -128,6 +128,31 @@ def _read_refactor_directive(state_dir: Path) -> str | None:
     return content
 
 
+def _archive_refactor_directive(directive: str, iter_dir: Path) -> None:
+    """Archive the refactor directive into the iteration directory before clearing."""
+    iter_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = iter_dir / "refactor-directive.md"
+    header = dedent(f"""\
+        <!-- Archived from REFACTOR_DIRECTIVE.md at {utcnow_iso()} -->
+        <!-- This is the directive the plan agent wrote for the refactor agent in this iteration. -->
+
+        """)
+    archive_path.write_text(header + directive + "\n")
+
+
+def _archive_refactor_report(state_dir: Path, iter_dir: Path) -> None:
+    """Copy task_results/refactor.md into the iteration directory (if it exists)."""
+    report_src = state_dir / "task_results" / "refactor.md"
+    if not report_src.exists():
+        return
+    iter_dir.mkdir(parents=True, exist_ok=True)
+    report_dst = iter_dir / "refactor-report.md"
+    try:
+        shutil.copy2(report_src, report_dst)
+    except OSError:
+        pass
+
+
 def _clear_refactor_directive(state_dir: Path) -> None:
     """Clear the refactor directive after execution."""
     directive_file = state_dir / "REFACTOR_DIRECTIVE.md"
@@ -183,6 +208,10 @@ def _run_refactor_phase(
         log.step(line)
     if len(preview_lines) > 5:
         log.step("... (%d more lines)" % (len(preview_lines) - 5))
+
+    # Archive the directive BEFORE the refactor agent runs, so even if the agent
+    # crashes we still have a record of what was asked.
+    _archive_refactor_directive(directive, iter_dir)
 
     write_meta(iter_meta, **{"refactor.status": "running"})
 
@@ -343,7 +372,9 @@ def _run_parallel_provers(
     """Parse objective files and launch one prover per file."""
     progress = state_dir / "PROGRESS.md"
 
-    archive_task_results(state_dir, state_dir / "logs")
+    # Archive task_results INTO the iteration dir, so the UI can surface them
+    # and logs/ stays tidy.
+    archive_task_results(state_dir, iter_dir)
 
     sorry_files = parse_objective_files(progress, project_path)
     if not sorry_files:
@@ -655,9 +686,11 @@ def loop(
         current_stage = read_stage(progress_file, force_stage)
 
         # ── Phase 2 (conditional): Refactor ──
+        refactor_ran = False
         if not no_refactor and not dry_run:
             directive = _read_refactor_directive(state_dir)
             if directive:
+                refactor_ran = True
                 _run_refactor_phase(
                     project_name, resolved, state_dir, directive,
                     iter_dir, iter_meta, verbose_logs,
@@ -679,6 +712,11 @@ def loop(
                     log.warn("Post-refactor plan agent wrote another REFACTOR_DIRECTIVE.md — "
                              "clearing it to prevent infinite loop. It will be reconsidered next iteration.")
                     _clear_refactor_directive(state_dir)
+
+                # Archive the refactor agent's report now that the post-refactor
+                # plan has read it (but before the next prover round sweeps away
+                # task_results/).
+                _archive_refactor_report(state_dir, iter_dir)
 
                 # Check sorry count after refactor
                 sorry_after_refactor = _count_sorries(resolved)
@@ -709,6 +747,10 @@ def loop(
                 log.step("[dry-run] Prover prompt:")
                 print(prover_prompt)
             else:
+                # Archive existing task_results into iter_dir before this prover
+                # round overwrites them (matches the parallel-mode behavior).
+                archive_task_results(state_dir, iter_dir)
+
                 prover_log = iter_dir / "prover"
 
                 sorry_files = parse_objective_files(progress_file, resolved)

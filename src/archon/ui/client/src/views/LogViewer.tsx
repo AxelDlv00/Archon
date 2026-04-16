@@ -64,13 +64,16 @@ function IterGroup({ group, selectedFile, onSelect, isLatest, nowMs }: {
 
   const isComplete = !!meta?.completedAt;
   const canShowRunning = isLatest && !isComplete;
-  const runningElapsed = canShowRunning
-    && (meta?.prover?.status === 'running' || meta?.plan?.status === 'running'
-        || meta?.review?.status === 'running' || meta?.refactor?.status === 'running')
+  const isAnyRunning =
+    meta?.prover?.status === 'running'
+    || meta?.plan?.status === 'running'
+    || meta?.review?.status === 'running'
+    || meta?.refactor?.status === 'running';
+  const runningElapsed = canShowRunning && isAnyRunning
     ? fmtElapsedMinutes(meta?.startedAt, nowMs)
     : '';
 
-  // Determine the currently active phase. Order: review > prover > refactor > plan
+  // Active phase detection — order reflects loop execution (plan → refactor → prover → review)
   const activePhase = canShowRunning && meta
     ? (meta.review?.status === 'running' ? 'review'
       : meta.prover?.status === 'running' ? 'prover'
@@ -89,9 +92,7 @@ function IterGroup({ group, selectedFile, onSelect, isLatest, nowMs }: {
         {meta?.mode === 'parallel' && <span className={styles.groupMode}>∥</span>}
         {isComplete && <span className={styles.groupDone}>✓</span>}
         {canShowRunning && activePhase && <span className={styles.groupStage}>{activePhase}</span>}
-        {canShowRunning && (meta?.prover?.status === 'running' || meta?.plan?.status === 'running'
-          || meta?.review?.status === 'running' || meta?.refactor?.status === 'running')
-          && <span className={styles.groupLive}>●</span>}
+        {canShowRunning && isAnyRunning && <span className={styles.groupLive}>●</span>}
         {runningElapsed && <span className={styles.groupElapsed}>{runningElapsed}</span>}
       </div>
 
@@ -109,9 +110,18 @@ function IterGroup({ group, selectedFile, onSelect, isLatest, nowMs }: {
 
           {group.files.map(f => {
             const isProver = f.role === 'prover' && f.path.includes('/provers/');
-            const displayName = isProver
-              ? f.name.replace('.jsonl', '').replace(/_/g, '/')
-              : f.role || f.name.replace('.jsonl', '');
+            const isArtifact = f.name.endsWith('.md');
+
+            let displayName: string;
+            if (isProver) {
+              displayName = f.name.replace('.jsonl', '').replace(/_/g, '/');
+            } else if (isArtifact) {
+              // For .md artifacts we already show the role prefix — no extra name needed
+              displayName = '';
+            } else {
+              displayName = f.role || f.name.replace('.jsonl', '');
+            }
+
             if (f.name === 'provers-combined.jsonl') return null;
 
             const proverSlug = f.name.replace('.jsonl', '');
@@ -122,12 +132,14 @@ function IterGroup({ group, selectedFile, onSelect, isLatest, nowMs }: {
                 key={f.path}
                 className={`${styles.fileItem} ${f.path === selectedFile ? styles.fileItemActive : ''}`}
                 onClick={() => onSelect(f.path)}
+                title={f.name}
               >
                 {isProver && (
                   <span className={styles.fileStatus} style={{
                     color: proverStatus === 'done' ? 'var(--green)' : proverStatus === 'running' ? 'var(--blue)' : proverStatus === 'error' ? 'var(--red)' : 'var(--text-muted)'
                   }}>●</span>
                 )}
+                {isArtifact && <span className={styles.fileStatus} style={{ color: '#e36209' }}>◆</span>}
                 {!isProver && <span className={styles.fileRole}>{f.role}</span>}
                 <span className={styles.fileName}>{isProver ? displayName : ''}</span>
               </div>
@@ -144,6 +156,8 @@ const ROLE_COLORS: Record<string, string> = {
   plan: 'var(--blue)',
   'plan-post-refactor': 'var(--blue)',
   refactor: '#e36209',
+  'refactor-directive': '#e36209',
+  'refactor-report': '#e36209',
   prover: 'var(--purple)',
   review: 'var(--orange)',
 };
@@ -192,6 +206,8 @@ export default function LogViewer() {
   const { entries, streaming } = useLogStream(selectedFile);
   const highlightConsumedRef = useRef(false);
 
+  const selectedIsArtifact = selectedFile.endsWith('.md');
+
   const goBackToDiffs = () => {
     if (!backTarget) return;
     navigate(`${backTarget.pathname}${backTarget.search || ''}`);
@@ -217,14 +233,12 @@ export default function LogViewer() {
     return () => window.clearInterval(interval);
   }, []);
 
-  // Consume deep-link once on first load
   useEffect(() => {
     if (!selectedFile && initialSelectedFile) {
       setSelectedFile(initialSelectedFile);
     }
   }, [selectedFile, initialSelectedFile]);
 
-  // Scroll to highlighted timestamp only once, on the initial deep-linked file
   useEffect(() => {
     if (highlightConsumedRef.current) return;
     if (!selectedFile || !initialSelectedFile || selectedFile !== initialSelectedFile) return;
@@ -234,7 +248,6 @@ export default function LogViewer() {
     }
   }, [selectedFile, initialSelectedFile, entries]);
 
-  // Pre-compute closest entry ts only for the initial deep-linked file
   const closestHighlightTs = useMemo(() => {
     if (selectedFile !== initialSelectedFile) return '';
     if (!initialHighlightTs || entries.length === 0) return '';
@@ -248,9 +261,8 @@ export default function LogViewer() {
       if (dist < minDist) { minDist = dist; bestTs = e.ts; }
     }
     return bestTs;
-  }, [entries, initialHighlightTs]);
+  }, [entries, initialHighlightTs, selectedFile, initialSelectedFile]);
 
-  // Derive the role of the selected file
   const selectedRole = useMemo(() => {
     if (!logsData || !selectedFile) return '';
     for (const g of logsData.groups) {
@@ -260,7 +272,6 @@ export default function LogViewer() {
     return '';
   }, [logsData, selectedFile]);
 
-  // Auto-select first file only if deep-link didn't choose one
   useEffect(() => {
     if (!logsData || selectedFile || initialSelectedFile) return;
     if (logsData.groups.length > 0) {
@@ -270,18 +281,17 @@ export default function LogViewer() {
     if (logsData.flat.length > 0) setSelectedFile(logsData.flat[0].path);
   }, [logsData, selectedFile, initialSelectedFile]);
 
-  // Filtered entries
   const filtered = useMemo(() => {
+    if (selectedIsArtifact) return entries;
     return entries.filter(e => selectedFilterSet.has(e.event as FilterEvent));
-  }, [entries, selectedFilterSet]);
+  }, [entries, selectedFilterSet, selectedIsArtifact]);
 
   const visibleEntries = useMemo(() => filtered.filter(e => e.event !== 'session_end'), [filtered]);
 
-  // Summary from session_end (shown at top when selected)
   const sessionEnd = useMemo(() => entries.find(e => e.event === 'session_end'), [entries]);
-  const showSessionSummary = !!sessionEnd && selectedFilterSet.has('session_end');
+  const showSessionSummary = !selectedIsArtifact && !!sessionEnd && selectedFilterSet.has('session_end');
 
-  const selectedLabel = selectedFile.replace(/\.jsonl$/, '').replace(/\//g, ' / ');
+  const selectedLabel = selectedFile.replace(/\.jsonl$/, '').replace(/\.md$/, '').replace(/\//g, ' / ');
   const latestGroupId = useMemo(() => {
     if (!logsData?.groups?.length) return '';
     return logsData.groups.reduce((latest, group) => {
@@ -292,6 +302,9 @@ export default function LogViewer() {
       return latest;
     }).id;
   }, [logsData]);
+
+  // For .md artifacts the server returns a single entry with event="text"
+  const artifactContent = selectedIsArtifact && entries.length > 0 ? (entries[0].content || '') : '';
 
   return (
     <div className={styles.root}>
@@ -346,47 +359,57 @@ export default function LogViewer() {
             </span>
           )}
           <span className={styles.selectedLabel}>{selectedLabel || 'Select a log'}</span>
-          <div className={styles.filterBar} aria-label="Event type filters">
-            <span className={styles.filterLabel}>Show</span>
-            <div className={styles.filterChips}>
-              {FILTER_OPTIONS.map(option => {
-                const active = selectedFilterSet.has(option.value);
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={`${styles.filterChip} ${active ? styles.filterChipActive : ''}`}
-                    onClick={() => toggleFilter(option.value)}
-                    aria-pressed={active}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
+          {!selectedIsArtifact && (
+            <div className={styles.filterBar} aria-label="Event type filters">
+              <span className={styles.filterLabel}>Show</span>
+              <div className={styles.filterChips}>
+                {FILTER_OPTIONS.map(option => {
+                  const active = selectedFilterSet.has(option.value);
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`${styles.filterChip} ${active ? styles.filterChipActive : ''}`}
+                      onClick={() => toggleFilter(option.value)}
+                      aria-pressed={active}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {!allFiltersSelected && (
+                <button type="button" className={styles.resetFiltersBtn} onClick={resetFilters}>
+                  Reset
+                </button>
+              )}
             </div>
-            {!allFiltersSelected && (
-              <button type="button" className={styles.resetFiltersBtn} onClick={resetFilters}>
-                Reset
-              </button>
-            )}
-          </div>
-          {streaming && <span className={styles.live}>● live</span>}
-          <span className={styles.count}>{filtered.length} entries</span>
+          )}
+          {streaming && !selectedIsArtifact && <span className={styles.live}>● live</span>}
+          <span className={styles.count}>
+            {selectedIsArtifact ? `${artifactContent.length.toLocaleString()} chars` : `${filtered.length} entries`}
+          </span>
         </div>
 
         {showSessionSummary && <RunSummaryBar entries={entries} />}
 
         <div className={styles.container}>
-          {/* Summary block at top */}
-          {showSessionSummary && sessionEnd?.summary && (
+          {/* Render markdown artifacts inline */}
+          {selectedIsArtifact && artifactContent && (
+            <div className={styles.summaryBlock}>
+              <MarkdownBlock content={artifactContent} className={styles.summaryText} />
+            </div>
+          )}
+
+          {/* JSONL logs: summary block + entries */}
+          {!selectedIsArtifact && showSessionSummary && sessionEnd?.summary && (
             <div className={styles.summaryBlock}>
               <span className={styles.summaryLabel}>Summary</span>
               <MarkdownBlock content={sessionEnd.summary} className={styles.summaryText} />
             </div>
           )}
 
-          {/* All entries, newest first */}
-          {(() => {
+          {!selectedIsArtifact && (() => {
             let highlightAttached = false;
             return visibleEntries.slice().reverse().map((e, i) => {
               const isHighlighted = !!(closestHighlightTs && e.ts === closestHighlightTs);
@@ -402,12 +425,14 @@ export default function LogViewer() {
             });
           })()}
 
-          {selectedFile && filtered.length === 0 && (
+          {selectedFile && !selectedIsArtifact && filtered.length === 0 && (
             <div className={styles.emptyContent}>No entries match the current filters.</div>
           )}
 
           {entries.length === 0 && selectedFile && (
-            <div className={styles.emptyContent}>No entries in this log file yet.</div>
+            <div className={styles.emptyContent}>
+              {selectedIsArtifact ? 'Artifact is empty.' : 'No entries in this log file yet.'}
+            </div>
           )}
         </div>
       </div>

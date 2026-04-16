@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { FastifyInstance } from 'fastify';
-import { parseJsonl } from '../utils.js';
+import { parseJsonl, readFileOr } from '../utils.js';
 import type { ProjectPaths } from './project.js';
 
 interface LogFileEntry { name: string; path: string; size: number; modified: string; role?: string }
@@ -12,8 +12,9 @@ function resolveLogPath(logsPath: string, logPath: string): string | null {
   const normalized = path.normalize(logPath).replace(/^(\.\.[/\\])+/, '');
   const full = path.join(logsPath, normalized);
   if (!full.startsWith(logsPath)) return null;
-  if (!full.endsWith('.jsonl')) return full + '.jsonl';
-  return full;
+  // For .md files, pass through as-is; for others, default to .jsonl
+  if (full.endsWith('.md') || full.endsWith('.jsonl')) return full;
+  return full + '.jsonl';
 }
 
 export function register(fastify: FastifyInstance, paths: ProjectPaths) {
@@ -40,6 +41,7 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
       const dirPath = path.join(logsPath, dir);
       const files: LogFileEntry[] = [];
 
+      // Standard JSONL logs at the iteration root.
       for (const f of fs.readdirSync(dirPath).filter(f => f.endsWith('.jsonl') && !f.endsWith('.raw.jsonl') && f !== 'provers-combined.jsonl')) {
         const full = path.join(dirPath, f);
         if (!fs.statSync(full).isFile()) continue;
@@ -48,6 +50,21 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
         files.push({ name: f, path: `${dir}/${f}`, size: stat.size, modified: stat.mtime.toISOString(), role });
       }
 
+      // Refactor artifacts (archived markdown).
+      for (const artifact of ['refactor-directive.md', 'refactor-report.md']) {
+        const full = path.join(dirPath, artifact);
+        if (!fs.existsSync(full) || !fs.statSync(full).isFile()) continue;
+        const stat = fs.statSync(full);
+        files.push({
+          name: artifact,
+          path: `${dir}/${artifact}`,
+          size: stat.size,
+          modified: stat.mtime.toISOString(),
+          role: artifact.replace('.md', ''),  // "refactor-directive" | "refactor-report"
+        });
+      }
+
+      // Parallel prover JSONL logs.
       const proversDir = path.join(dirPath, 'provers');
       if (fs.existsSync(proversDir) && fs.statSync(proversDir).isDirectory()) {
         for (const f of fs.readdirSync(proversDir).filter(f => f.endsWith('.jsonl') && !f.endsWith('.raw.jsonl')).sort()) {
@@ -67,21 +84,34 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
     return { flat, groups };
   });
 
-  // Wildcard log content
+  // Wildcard log content — supports both .jsonl (parsed) and .md (raw).
   fastify.get('/api/logs/*', async (req, reply) => {
     const subpath = (req.params as Record<string, string>)['*'];
     if (!subpath) return reply.status(400).send({ error: 'Missing path' });
     const filePath = resolveLogPath(logsPath, subpath);
     if (!filePath || !fs.existsSync(filePath)) return reply.status(404).send({ error: 'Not found' });
+
+    if (filePath.endsWith('.md')) {
+      // Serve markdown as a single synthetic "text" log entry so the existing
+      // client log-viewer can render it without a separate code path.
+      const content = readFileOr(filePath, '');
+      const stat = fs.statSync(filePath);
+      return [{
+        ts: stat.mtime.toISOString(),
+        event: 'text',
+        content,
+      }];
+    }
+
     return parseJsonl(filePath);
   });
 
-  // WebSocket streaming
+  // WebSocket streaming (JSONL only; .md files are static artifacts).
   fastify.get('/api/log-stream/*', { websocket: true }, (socket, req) => {
     const subpath = (req.params as Record<string, string>)['*'] || '';
     const filePath = resolveLogPath(logsPath, subpath);
-    if (!filePath || !fs.existsSync(filePath)) {
-      socket.send(JSON.stringify({ type: 'error', message: 'Not found' }));
+    if (!filePath || !fs.existsSync(filePath) || !filePath.endsWith('.jsonl')) {
+      socket.send(JSON.stringify({ type: 'error', message: 'Not found or not streamable' }));
       socket.close();
       return;
     }
