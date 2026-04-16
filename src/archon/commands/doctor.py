@@ -74,11 +74,6 @@ def _check_python_tools() -> list[tuple[str, str, str]]:
     else:
         rows.append(("uv", "error", "not found"))
 
-    if _has("tmux"):
-        rows.append(("tmux", "ok", _version(["tmux", "-V"])))
-    else:
-        rows.append(("tmux", "warning", "not found (needed for parallel mode)"))
-
     return rows
 
 

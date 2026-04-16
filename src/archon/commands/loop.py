@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import shutil
+import signal
+import socket
 import subprocess
 import sys
 import time
+import webbrowser
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from importlib import resources
@@ -57,6 +61,90 @@ def _file_slug(rel: str) -> str:
     return rel.replace("/", "_").replace(os.sep, "_").removesuffix(".lean")
 
 
+# ── dashboard auto-launch ─────────────────────────────────────────────
+
+
+def _port_free(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", port)) != 0
+
+
+def _find_free_port(start: int = 8080, attempts: int = 20) -> int | None:
+    for p in range(start, start + attempts):
+        if _port_free(p):
+            return p
+    return None
+
+
+def _start_dashboard(project_path: Path, open_browser: bool) -> tuple[subprocess.Popen | None, int | None]:
+    """Start the dashboard UI as a background process.
+
+    Returns (process, port) or (None, None) on failure. Registers an atexit
+    hook so the process is cleaned up when `archon loop` exits.
+    """
+    if not shutil.which("node") or not shutil.which("npm"):
+        log.warn("Dashboard skipped: Node.js / npm not found (run: archon setup)")
+        return None, None
+
+    port = _find_free_port(8080)
+    if port is None:
+        log.warn("Dashboard skipped: could not find a free port in 8080–8099")
+        return None, None
+
+    # Delegate to `archon dashboard` so all the build/install logic lives in one place.
+    # --build-free path: dashboard command handles build if needed.
+    cmd = ["archon", "dashboard", str(project_path), "--port", str(port)]
+
+    # Detach from terminal I/O so streaming prover logs stay clean
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,  # so Ctrl-C in loop doesn't hit the dashboard
+        )
+    except Exception as e:
+        log.warn(f"Dashboard failed to start: {e}")
+        return None, None
+
+    # Give it a moment to bind
+    for _ in range(10):
+        time.sleep(0.5)
+        if not _port_free(port):
+            break
+        if proc.poll() is not None:
+            log.warn("Dashboard process exited before binding its port")
+            return None, None
+
+    url = f"http://localhost:{port}"
+    log.panel(
+        f"Dashboard is live at [bold cyan]{url}[/bold cyan]\n"
+        f"Watch iterations, parallel provers, diffs, and the proof journal update live.",
+        title="Archon Dashboard",
+        style="cyan",
+    )
+
+    if open_browser:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+    def _cleanup():
+        if proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except Exception:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+    atexit.register(_cleanup)
+
+    return proc, port
+
+
 # ── snapshot helpers ──────────────────────────────────────────────────
 
 
@@ -75,7 +163,6 @@ def _set_prover_env(
     project_path: Path | str,
     serial_mode: bool = False,
 ) -> dict[str, str]:
-    """Set ARCHON_SNAPSHOT_DIR/PROVER_JSONL/PROJECT_PATH env vars and return the old values."""
     old = {}
     env_vars = {
         "ARCHON_SNAPSHOT_DIR": str(snap_dir),
@@ -92,7 +179,6 @@ def _set_prover_env(
 
 
 def _unset_prover_env(old: dict[str, str]) -> None:
-    """Restore or unset ARCHON env vars from saved old values."""
     for k, v in old.items():
         if v is None:
             os.environ.pop(k, None)
@@ -131,9 +217,7 @@ def _preflight(project_path: Path, state_dir: Path, dry_run: bool) -> None:
 
 
 def _emit_parallel_round_end(iter_dir: Path, prover_count: int, failed: int) -> None:
-    """Write a parallel_round_end event to the iteration's JSONL log."""
     provers_dir = iter_dir / "provers"
-    # Append to any existing prover log, or create one at iter level
     target = None
     if provers_dir.exists():
         logs = sorted(provers_dir.glob("*.jsonl"))
@@ -152,7 +236,7 @@ def _emit_parallel_round_end(iter_dir: Path, prover_count: int, failed: int) -> 
         f.write(json.dumps(row) + "\n")
 
 
-# ── parallel provers ──────────────────────────────────────────────────
+# ── parallel provers (unchanged from previous version) ────────────────
 
 
 def _run_single_prover(
@@ -163,10 +247,6 @@ def _run_single_prover(
     snap_dir: Path | None = None,
     project_path: Path | None = None,
 ) -> bool:
-    """Entry point for a single prover (may run in subprocess).
-
-    Sets ARCHON env vars for the duration of the prover run.
-    """
     if snap_dir is not None and project_path is not None:
         old_env = _set_prover_env(
             snap_dir=snap_dir,
@@ -193,8 +273,8 @@ def _run_parallel_provers(
     max_parallel: int,
     verbose_logs: bool,
     dry_run: bool,
+    dashboard_url: str | None = None,
 ) -> None:
-    """Parse objective files and launch one prover per file."""
     progress = state_dir / "PROGRESS.md"
 
     archive_task_results(state_dir, state_dir / "logs")
@@ -208,14 +288,12 @@ def _run_parallel_provers(
 
     file_count = len(sorry_files)
 
-    # Dry run check before anything else
     if dry_run:
         for f in sorry_files:
             rel = _relpath(f, project_path)
             log.step(f"[dry-run] Prover: {rel}")
         return
 
-    # Single file → run serial
     if file_count == 1:
         rel = _relpath(sorry_files[0], project_path)
         slug = _file_slug(rel)
@@ -224,11 +302,9 @@ def _run_parallel_provers(
         prover_log = iter_dir / "provers" / slug
         write_meta(iter_meta, **{f"provers.{slug}.file": rel, f"provers.{slug}.status": "running"})
 
-        # Snapshot baseline
         snap_dir = iter_dir / "snapshots" / slug
         _snapshot_baseline(sorry_files[0], snap_dir)
 
-        # Set env vars and run
         old_env = _set_prover_env(
             snap_dir=snap_dir,
             prover_jsonl=Path(str(prover_log) + ".jsonl"),
@@ -247,11 +323,13 @@ def _run_parallel_provers(
 
     base_prompt = build_parallel_prover_prompt(project_name, project_path, state_dir, stage)
 
-    log.info(f"Watch progress:")
+    log.info("Watch progress:")
+    if dashboard_url:
+        log.step(f"Dashboard:       {dashboard_url}")
+        log.step(f"Iteration view:  {dashboard_url}/logs")
     log.step(f"tail -f {iter_dir}/provers/*.jsonl")
     log.step(f"watch -n10 'ls -lt {state_dir}/task_results/'")
 
-    # Launch provers with ProcessPoolExecutor
     futures = {}
     with ProcessPoolExecutor(max_workers=min(max_parallel, file_count)) as pool:
         for f in sorry_files:
@@ -260,7 +338,6 @@ def _run_parallel_provers(
             prover_log = iter_dir / "provers" / slug
             prompt = f"{base_prompt}\nYour assigned file: {rel}"
 
-            # Snapshot baseline
             snap_dir = iter_dir / "snapshots" / slug
             _snapshot_baseline(f, snap_dir)
 
@@ -298,16 +375,14 @@ def _run_parallel_provers(
     else:
         log.success(f"All {file_count} prover(s) finished successfully")
 
-    # Report task results
     results_dir = state_dir / "task_results"
     result_count = len(list(results_dir.glob("*.md"))) if results_dir.exists() else 0
     log.info(f"Found {result_count}/{file_count} task result file(s)")
 
-    # Emit parallel round event for dashboard consumption
     _emit_parallel_round_end(iter_dir, file_count, failed)
 
 
-# ── review phase ──────────────────────────────────────────────────────
+# ── review phase (unchanged) ──────────────────────────────────────────
 
 
 def _run_review_phase(
@@ -327,7 +402,6 @@ def _run_review_phase(
     session_dir.mkdir(parents=True, exist_ok=True)
     current_session_dir.mkdir(parents=True, exist_ok=True)
 
-    # Extract attempt data from prover logs
     log.info("Extracting attempt data from prover logs...")
     provers_dir = iter_dir / "provers"
     if provers_dir.exists() and list(provers_dir.glob("*.jsonl")):
@@ -338,14 +412,13 @@ def _run_review_phase(
     else:
         combined = iter_dir / "prover.jsonl"
 
-    extract_script = _data_path("scripts/extract-attempts.py") if _data_path("scripts/extract-attempts.py").exists() else None
-    if extract_script and extract_script.exists():
+    extract_script = _data_path("scripts/extract-attempts.py")
+    if extract_script.exists():
         subprocess.run(
             [sys.executable, str(extract_script), str(combined), str(attempts_file)],
             capture_output=True,
         )
 
-    # Run review agent
     prompt = build_review_prompt(
         project_name, project_path, state_dir, stage,
         session_num, session_dir, attempts_file, combined,
@@ -353,9 +426,8 @@ def _run_review_phase(
     review_log = iter_dir / "review"
     run_claude(prompt, cwd=project_path, log_base=review_log, verbose_logs=verbose_logs)
 
-    # Validate review output
-    validate_script = _data_path("scripts/validate-review.py") if _data_path("scripts/validate-review.py").exists() else None
-    if validate_script and validate_script.exists():
+    validate_script = _data_path("scripts/validate-review.py")
+    if validate_script.exists():
         subprocess.run(
             [sys.executable, str(validate_script), str(session_dir), str(attempts_file)],
             capture_output=True,
@@ -393,11 +465,19 @@ def loop(
         False, "--dry-run",
         help="Print prompts without launching Claude.",
     ),
+    no_dashboard: bool = typer.Option(
+        False, "--no-dashboard",
+        help="Do not auto-start the web dashboard.",
+    ),
+    open_browser: bool = typer.Option(
+        False, "--open",
+        help="Open the dashboard in a browser as soon as it starts.",
+    ),
 ) -> None:
     """Start the automated plan → prove → review loop.
 
-    Alternates plan and prover agents through stages (autoformalize → prover
-    → polish) until COMPLETE or max iterations reached.
+    By default, the web dashboard is launched in the background so you can
+    watch iterations live. Pass --no-dashboard to disable this.
     """
     resolved = Path(project_path).resolve()
     project_name = resolved.name
@@ -426,6 +506,7 @@ def loop(
         "Max iterations": str(max_iterations),
         "Prover mode": prover_mode,
         "Review": "enabled" if not no_review else "disabled",
+        "Dashboard": "disabled" if no_dashboard else "enabled",
         "Logs": str(log_dir),
         "User hints": str(state_dir / "USER_HINTS.md"),
     }
@@ -435,8 +516,18 @@ def loop(
     log.header("Archon Loop")
     log.key_value(config)
 
+    # ── Start dashboard ──────────────────────────────────────────────
+    dashboard_proc: subprocess.Popen | None = None
+    dashboard_url: str | None = None
+    if not dry_run and not no_dashboard:
+        dashboard_proc, dashboard_port = _start_dashboard(resolved, open_browser)
+        if dashboard_port:
+            dashboard_url = f"http://localhost:{dashboard_port}"
+
     if is_complete(progress_file, force_stage):
         log.success(f"Project '{project_name}' is COMPLETE. Nothing to do.")
+        if dashboard_url:
+            log.step(f"Review results in the dashboard: {dashboard_url}")
         return
 
     loop_start = time.monotonic()
@@ -449,10 +540,11 @@ def loop(
             break
 
         log.iteration(i + 1, max_iterations, current_stage, project_name)
+        if dashboard_url:
+            log.step(f"Live view: {dashboard_url}")
 
         iter_start = time.monotonic()
 
-        # Set up iteration directory
         iter_dir: Path | None = None
         iter_meta: Path | None = None
         if not dry_run:
@@ -507,6 +599,7 @@ def loop(
             _run_parallel_provers(
                 project_name, resolved, state_dir, current_stage,
                 iter_dir, iter_meta, max_parallel, verbose_logs, dry_run,
+                dashboard_url=dashboard_url,
             )
         else:
             prover_prompt = build_prover_prompt(project_name, resolved, state_dir, current_stage)
@@ -515,8 +608,6 @@ def loop(
                 print(prover_prompt)
             else:
                 prover_log = iter_dir / "prover"
-
-                # Snapshot baseline for all target files in serial mode
                 sorry_files = parse_objective_files(progress_file, resolved)
                 if sorry_files:
                     for sf in sorry_files:
@@ -525,8 +616,6 @@ def loop(
                         ssnap = iter_dir / "snapshots" / sslug
                         _snapshot_baseline(sf, ssnap)
 
-                # Serial prover edits multiple files — set ARCHON_SNAPSHOT_DIR
-                # to the snapshots root; snapshot.py derives the subdir
                 old_env = _set_prover_env(
                     snap_dir=iter_dir / "snapshots",
                     prover_jsonl=Path(str(prover_log) + ".jsonl"),
@@ -540,6 +629,8 @@ def loop(
 
         prover_secs = int(time.monotonic() - prover_start)
         log.info(f"Prover phase finished. ({prover_secs}s)")
+        if dashboard_url:
+            log.step(f"Inspect diffs: {dashboard_url}/diffs")
         if not dry_run:
             write_meta(iter_meta, **{"prover.status": "done", "prover.durationSecs": prover_secs})
 
@@ -557,6 +648,8 @@ def loop(
 
             review_secs = int(time.monotonic() - review_start)
             log.info(f"Review phase finished. ({review_secs}s)")
+            if dashboard_url:
+                log.step(f"Journal:       {dashboard_url}/journal")
             write_meta(iter_meta, **{"review.status": "done", "review.durationSecs": review_secs})
 
         iter_secs = int(time.monotonic() - iter_start)
@@ -578,3 +671,11 @@ def loop(
     data = cost_summary(log_dir)
     if data:
         log.cost_table("Loop totals", data.totals_dict(), data.model_rows() or None)
+
+    if dashboard_url:
+        log.panel(
+            f"Loop finished. The dashboard is still running at [bold cyan]{dashboard_url}[/bold cyan].\n"
+            f"Inspect results, then stop it with Ctrl-C or by closing this terminal.",
+            title="Done",
+            style="green",
+        )

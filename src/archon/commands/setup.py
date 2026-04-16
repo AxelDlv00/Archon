@@ -12,6 +12,18 @@ import typer
 from archon import log
 
 
+# ── module-level state ────────────────────────────────────────────────
+
+# Set by the `setup` command. Controls whether _install_with_pm will
+# escalate to sudo, ask the user, or just print manual instructions.
+#
+# Values:
+#   "ask"    — prompt the user before each sudo call (default)
+#   "yes"    — auto-accept sudo (non-interactive, e.g. containers/CI)
+#   "no"     — never sudo; print manual instructions and return False
+_SUDO_MODE: str = "ask"
+
+
 def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
     """Run a command, returning the CompletedProcess."""
     return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
@@ -45,7 +57,6 @@ def _shell_rc() -> Path | None:
 
 
 def _data_path(sub_path: str = "") -> Path:
-    """Resolve a path inside the bundled archon package."""
     root = resources.files("archon")
     if sub_path:
         return Path(str(root.joinpath(sub_path)))
@@ -53,7 +64,6 @@ def _data_path(sub_path: str = "") -> Path:
 
 
 def _source_nvm() -> None:
-    """Load nvm into the current process PATH if installed."""
     nvm_dir = Path.home() / ".nvm"
     nvm_sh = nvm_dir / "nvm.sh"
     if not nvm_sh.exists():
@@ -77,6 +87,95 @@ def _ensure_path_in_rc() -> None:
         log.step(f"Run: source {rc}")
 
 
+# ── sudo / package-manager helpers ────────────────────────────────────
+
+
+def _detect_pm() -> tuple[str, list[str]] | None:
+    """Return (name, install_cmd_prefix) for the first package manager found.
+
+    The install command is a list you can extend with package names.
+    Returns None if no supported package manager is available.
+    """
+    if _has("brew"):
+        # Homebrew doesn't need (and refuses) sudo, so we special-case it.
+        return ("brew", ["brew", "install"])
+    if _has("apt-get"):
+        return ("apt-get", ["sudo", "apt-get", "install", "-y"])
+    if _has("dnf"):
+        return ("dnf", ["sudo", "dnf", "install", "-y"])
+    if _has("pacman"):
+        return ("pacman", ["sudo", "pacman", "-S", "--noconfirm"])
+    return None
+
+
+def _ask_sudo(pkg: str, cmd: list[str]) -> bool:
+    """Return True if we should run a sudo command for this package.
+
+    - _SUDO_MODE="yes"  → always True
+    - _SUDO_MODE="no"   → always False
+    - _SUDO_MODE="ask"  → prompt the user (default to skip)
+    """
+    if cmd and cmd[0] != "sudo":
+        # Non-sudo command (e.g. brew). No permission needed.
+        return True
+
+    if _SUDO_MODE == "yes":
+        return True
+    if _SUDO_MODE == "no":
+        return False
+
+    log.warn(f"Installing '{pkg}' requires sudo: {' '.join(cmd)}")
+    return typer.confirm("  Run this command now?", default=False)
+
+
+def _print_manual_install(pkg: str, install_urls: dict[str, str] | None = None) -> None:
+    """Print manual install instructions for a package."""
+    log.step(f"Skipping auto-install of '{pkg}'.")
+    log.step(f"To install manually, run one of the following (whichever matches your OS):")
+    log.step(f"  macOS (Homebrew):  brew install {pkg}")
+    log.step(f"  Debian/Ubuntu:     sudo apt-get install -y {pkg}")
+    log.step(f"  Fedora/RHEL:       sudo dnf install -y {pkg}")
+    log.step(f"  Arch Linux:        sudo pacman -S --noconfirm {pkg}")
+    if install_urls:
+        for label, url in install_urls.items():
+            log.step(f"  {label}: {url}")
+
+
+def _install_with_pm(pkg: str, install_urls: dict[str, str] | None = None) -> bool:
+    """Install a package via the detected package manager, respecting sudo policy.
+
+    Returns True if the install was attempted (does NOT guarantee the binary
+    is now available — callers should re-check with _has()).
+    """
+    pm = _detect_pm()
+    if pm is None:
+        log.warn(f"No supported package manager found for installing '{pkg}'.")
+        _print_manual_install(pkg, install_urls)
+        return False
+
+    name, base_cmd = pm
+    cmd = base_cmd + [pkg]
+
+    # apt-get needs `update` first to avoid stale indexes; do it under the
+    # same sudo policy.
+    if name == "apt-get":
+        if _ask_sudo(f"apt update (prerequisite for {pkg})", ["sudo", "apt-get", "update", "-qq"]):
+            _run(["sudo", "apt-get", "update", "-qq"])
+        else:
+            log.step("Skipping apt-get update — the install may fail on a stale index.")
+
+    if not _ask_sudo(pkg, cmd):
+        _print_manual_install(pkg, install_urls)
+        return False
+
+    log.step(f"Running: {' '.join(cmd)}")
+    r = _run(cmd)
+    if r.returncode != 0:
+        log.warn(f"Install command failed: {(r.stderr or r.stdout).strip()}")
+        return False
+    return True
+
+
 # ── individual checks ─────────────────────────────────────────────────
 
 
@@ -85,22 +184,13 @@ def _check_git() -> bool:
         log.success(f"git: {_version(['git', '--version'])}")
         return True
 
-    log.step("Installing git...")
-    if _has("apt-get"):
-        _run(["sudo", "apt-get", "update", "-qq"])
-        _run(["sudo", "apt-get", "install", "-y", "-qq", "git"])
-    elif _has("brew"):
-        _run(["brew", "install", "git"])
-    elif _has("dnf"):
-        _run(["sudo", "dnf", "install", "-y", "git"])
-    elif _has("pacman"):
-        _run(["sudo", "pacman", "-S", "--noconfirm", "git"])
+    log.step("git not found, attempting install...")
+    _install_with_pm("git", {"Manual": "https://git-scm.com/downloads"})
 
     if _has("git"):
         log.success(f"git installed: {_version(['git', '--version'])}")
         return True
-    log.error("git is not installed and could not be auto-installed")
-    log.step("Install manually: https://git-scm.com/downloads")
+    log.error("git is not available — install it manually and re-run.")
     return False
 
 
@@ -118,21 +208,14 @@ def _check_curl() -> bool:
     if _has("curl"):
         log.success("curl: available")
         return True
-    log.step("Installing curl...")
-    if _has("apt-get"):
-        _run(["sudo", "apt-get", "update", "-qq"])
-        _run(["sudo", "apt-get", "install", "-y", "-qq", "curl"])
-    elif _has("brew"):
-        _run(["brew", "install", "curl"])
-    elif _has("dnf"):
-        _run(["sudo", "dnf", "install", "-y", "curl"])
-    elif _has("pacman"):
-        _run(["sudo", "pacman", "-S", "--noconfirm", "curl"])
+
+    log.step("curl not found, attempting install...")
+    _install_with_pm("curl")
 
     if _has("curl"):
         log.success("curl: installed")
         return True
-    log.error("curl is required and could not be auto-installed")
+    log.error("curl is required and is not available.")
     return False
 
 
@@ -151,14 +234,23 @@ def _check_lean() -> bool:
     if ok:
         return True
 
-    log.step("Installing elan (Lean toolchain manager)...")
-
+    # Installing elan is either via Homebrew (no sudo) or via the official
+    # installer script that writes to ~/.elan (also no sudo). Neither needs
+    # the sudo gate — but we still warn the user that a script runs.
     if _has("brew"):
+        log.step("Installing elan via Homebrew...")
         r = _run(["brew", "install", "elan-init"])
         if r.returncode == 0:
             _run(["elan", "default", "stable"])
     else:
-        r = _run_shell("curl https://elan.lean-lang.org/elan-init.sh -sSf | sh -s -- -y --default-toolchain stable")
+        log.warn("Archon is about to run the official elan installer:")
+        log.step("  curl https://elan.lean-lang.org/elan-init.sh -sSf | sh -s -- -y --default-toolchain stable")
+        log.step("This installs to ~/.elan — no sudo required.")
+        proceed = typer.confirm("  Run it now?", default=True) if _SUDO_MODE == "ask" else (_SUDO_MODE == "yes")
+        if not proceed:
+            log.step("Skipping elan install. See: https://lean-lang.org/lean4/doc/quickstart.html")
+            return False
+        _run_shell("curl https://elan.lean-lang.org/elan-init.sh -sSf | sh -s -- -y --default-toolchain stable")
 
     if elan_bin.is_dir():
         os.environ["PATH"] = f"{elan_bin}{os.pathsep}{os.environ['PATH']}"
@@ -183,10 +275,12 @@ def _check_uv() -> bool:
         log.success(f"uv: {_version(['uv', '--version'])}")
         _run(["uv", "self", "update"])
         return True
-    log.step("Installing uv...")
+
+    # uv's standalone installer writes to ~/.local/bin — no sudo.
+    log.step("Installing uv (to ~/.local/bin, no sudo)...")
     r = _run_shell("curl -LsSf https://astral.sh/uv/install.sh | sh")
     if r.returncode != 0:
-        log.warn("Standalone installer failed, trying pip...")
+        log.warn("Standalone installer failed, trying pip --user...")
         _run([sys.executable, "-m", "pip", "install", "--user", "uv"])
     os.environ["PATH"] = f"{Path.home() / '.local' / 'bin'}{os.pathsep}{os.environ['PATH']}"
     if _has("uv"):
@@ -197,50 +291,18 @@ def _check_uv() -> bool:
     log.step("Install manually: https://docs.astral.sh/uv/getting-started/installation/")
     return False
 
-
-def _check_tmux() -> bool:
-    if _has("tmux"):
-        log.success(f"tmux: {_version(['tmux', '-V'])}")
-        return True
-    log.step("Installing tmux...")
-    if _has("apt-get"):
-        _run(["sudo", "apt-get", "update", "-qq"])
-        _run(["sudo", "apt-get", "install", "-y", "-qq", "tmux"])
-    elif _has("brew"):
-        _run(["brew", "install", "tmux"])
-    elif _has("dnf"):
-        _run(["sudo", "dnf", "install", "-y", "tmux"])
-    elif _has("pacman"):
-        _run(["sudo", "pacman", "-S", "--noconfirm", "tmux"])
-
-    if _has("tmux"):
-        log.success(f"tmux installed: {_version(['tmux', '-V'])}")
-        return True
-    log.warn("Could not install tmux")
-    log.step("Install manually: https://github.com/tmux/tmux/wiki/Installing")
-    return False
-
-
 def _check_ripgrep() -> bool:
     if _has("rg"):
         log.success(f"ripgrep: {_version(['rg', '--version'])}")
         return True
-    log.step("Installing ripgrep (optional, used for code search)...")
-    if _has("apt-get"):
-        _run(["sudo", "apt-get", "update", "-qq"])
-        _run(["sudo", "apt-get", "install", "-y", "-qq", "ripgrep"])
-    elif _has("brew"):
-        _run(["brew", "install", "ripgrep"])
-    elif _has("dnf"):
-        _run(["sudo", "dnf", "install", "-y", "ripgrep"])
-    elif _has("pacman"):
-        _run(["sudo", "pacman", "-S", "--noconfirm", "ripgrep"])
+
+    log.step("ripgrep is optional (used for code search). Attempting install...")
+    _install_with_pm("ripgrep", {"Manual": "https://github.com/BurntSushi/ripgrep"})
 
     if _has("rg"):
         log.success(f"ripgrep installed: {_version(['rg', '--version'])}")
         return True
-    log.warn("Could not install ripgrep")
-    log.step("Install manually: https://github.com/burntsushi/ripgrep")
+    log.warn("ripgrep not installed — some search tools will be slower.")
     return False
 
 
@@ -248,7 +310,9 @@ def _check_claude_code() -> bool:
     if _has("claude"):
         log.success(f"Claude Code: {_version(['claude', '--version'])} (update: claude update)")
         return True
-    log.step("Installing Claude Code (may take a few minutes)...")
+
+    # Claude Code's installer writes to ~/.local/bin — no sudo.
+    log.step("Installing Claude Code (to ~/.local/bin, no sudo, may take a few minutes)...")
     _run_shell("curl -fsSL https://claude.ai/install.sh | bash")
     os.environ["PATH"] = f"{Path.home() / '.local' / 'bin'}{os.pathsep}{os.environ['PATH']}"
     if _has("claude"):
@@ -260,7 +324,7 @@ def _check_claude_code() -> bool:
 
 
 def _check_node() -> bool:
-    """Check/install Node.js 18+ via nvm."""
+    """Check/install Node.js 18+ via nvm (no sudo)."""
     _source_nvm()
 
     if _has("node") and _has("npm"):
@@ -279,7 +343,7 @@ def _check_node() -> bool:
     nvm_sh = nvm_dir / "nvm.sh"
 
     if not nvm_sh.exists():
-        log.step("Installing nvm (Node Version Manager)...")
+        log.step("Installing nvm (Node Version Manager, to ~/.nvm, no sudo)...")
         r = _run_shell("curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash")
         if r.returncode != 0:
             log.error("nvm installation failed")
@@ -308,7 +372,6 @@ def _check_node() -> bool:
 
 
 def _install_dashboard_deps() -> bool:
-    """Install npm dependencies for the dashboard (server + client)."""
     ui_dir = _data_path("ui")
     if not ui_dir.exists():
         log.warn("UI files not found in package data — skipping dashboard deps")
@@ -340,23 +403,19 @@ def _install_dashboard_deps() -> bool:
             log.success(f"Dashboard {name} dependencies up to date")
             continue
 
-        # Always clean install to avoid cross-platform binary issues
         if not _npm_install(directory, name, clean=True):
             ok = False
 
-    # Build client if needed
     ok = _build_dashboard_client(client_dir) and ok
     return ok
 
 
 def _has_wrong_platform_binaries(node_modules: Path) -> bool:
-    """Check if node_modules contains native binaries for a different platform."""
     import platform as _platform
 
-    system = _platform.system().lower()   # 'linux', 'darwin', 'windows'
-    machine = _platform.machine().lower() # 'x86_64', 'arm64', 'aarch64'
+    system = _platform.system().lower()
+    machine = _platform.machine().lower()
 
-    # Normalize to esbuild/rollup naming conventions
     if system == "linux":
         expected_fragments = ["linux"]
     elif system == "darwin":
@@ -369,7 +428,6 @@ def _has_wrong_platform_binaries(node_modules: Path) -> bool:
     elif machine in ("arm64", "aarch64"):
         expected_fragments.append("arm64")
 
-    # Check for known platform-specific packages
     for pkg_prefix in ("@esbuild", "@rollup"):
         pkg_dir = node_modules / pkg_prefix
         if not pkg_dir.is_dir():
@@ -377,7 +435,6 @@ def _has_wrong_platform_binaries(node_modules: Path) -> bool:
         subdirs = [d.name for d in pkg_dir.iterdir() if d.is_dir()]
         if not subdirs:
             continue
-        # If we find platform-specific dirs but none match current platform
         has_any = len(subdirs) > 0
         has_current = any(
             all(frag in d for frag in expected_fragments)
@@ -390,7 +447,6 @@ def _has_wrong_platform_binaries(node_modules: Path) -> bool:
 
 
 def _npm_install(directory: Path, name: str, clean: bool = False) -> bool:
-    """Run npm install in a directory, optionally cleaning first."""
     if clean:
         node_modules = directory / "node_modules"
         package_lock = directory / "package-lock.json"
@@ -415,7 +471,6 @@ def _npm_install(directory: Path, name: str, clean: bool = False) -> bool:
 
 
 def _build_dashboard_client(client_dir: Path) -> bool:
-    """Build the dashboard client via vite, with auto-retry on rollup errors."""
     client_dist = client_dir / "dist" / "index.html"
     client_src = client_dir / "src"
     needs_build = False
@@ -452,7 +507,6 @@ def _build_dashboard_client(client_dir: Path) -> bool:
         log.success("Dashboard client built")
         return True
 
-    # Check for the known rollup/npm optional dependency bug
     stderr = r.stderr or ""
     if "rollup" in stderr.lower() and ("cannot find module" in stderr.lower() or "npm has a bug" in stderr.lower()):
         log.warn("Hit known rollup/npm optional dependency bug — retrying with clean install")
@@ -483,7 +537,8 @@ def _check_api_keys() -> None:
     found_any = False
     for var, label in keys.items():
         if os.environ.get(var):
-            log.success(f"{var} is set ({label}) : {os.environ[var][:4]}...{os.environ[var][-4:]})")
+            value = os.environ[var]
+            log.success(f"{var} is set ({label}) : {value[:4]}...{value[-4:]})")
             found_any = True
         else:
             log.step(f"{var} not set — export {var}=... to enable {label}")
@@ -494,13 +549,43 @@ def _check_api_keys() -> None:
 # ── main command ──────────────────────────────────────────────────────
 
 
-def setup() -> None:
+def setup(
+    yes: bool = typer.Option(
+        False, "--yes", "-y",
+        help="Accept all sudo-requiring installs non-interactively. "
+        "Only use in containers/CI where you trust the environment.",
+    ),
+    no_sudo: bool = typer.Option(
+        False, "--no-sudo",
+        help="Never run sudo. For any dependency that would require it, "
+        "print manual install instructions and continue.",
+    ),
+) -> None:
     """Install system-level dependencies.
 
-    Checks and auto-installs where possible: git, Python 3.10+, curl,
-    elan/lean/lake, uv, tmux, ripgrep, Claude Code, Node.js (via nvm),
-    dashboard npm dependencies, and external-model API keys (optional).
+    Checks and installs (without silent sudo) git, Python 3.10+, curl,
+    elan/lean/lake, uv, ripgrep, Claude Code, Node.js (via nvm), dashboard
+    npm dependencies, and verifies external-model API keys.
+
+    By default, prompts before any sudo command. Use --yes to auto-accept
+    (containers/CI) or --no-sudo to print manual instructions instead.
+
+    tmux is NOT installed — Archon's parallel prover uses ProcessPoolExecutor
+    and does not need tmux.
     """
+    global _SUDO_MODE
+    if yes and no_sudo:
+        log.error("--yes and --no-sudo are mutually exclusive.")
+        raise typer.Exit(1)
+    if yes:
+        _SUDO_MODE = "yes"
+        log.warn("Running in --yes mode: sudo commands will NOT be confirmed.")
+    elif no_sudo:
+        _SUDO_MODE = "no"
+        log.info("Running in --no-sudo mode: manual instructions will be printed for packaged deps.")
+    else:
+        _SUDO_MODE = "ask"
+
     fatal = False
 
     log.rule("System prerequisites")
@@ -513,7 +598,6 @@ def setup() -> None:
 
     log.rule("Python tooling & packages")
     _check_uv()
-    _check_tmux()
     _check_ripgrep()
 
     log.rule("Claude Code")

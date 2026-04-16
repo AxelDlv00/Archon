@@ -82,6 +82,7 @@ from archon.commands.doctor import doctor  # noqa: E402
 from archon.commands.dashboard import dashboard  # noqa: E402
 from archon.commands.setup import setup  # noqa: E402
 from archon.commands.prove import prove  # noqa: E402
+from archon.commands.update import update  # noqa: E402
 
 app.command()(init)
 app.command()(loop)
@@ -89,6 +90,7 @@ app.command()(doctor)
 app.command()(dashboard)
 app.command()(prove)
 app.command()(setup)
+app.command()(update)
 
 if __name__ == "__main__":
     app()
