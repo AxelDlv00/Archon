@@ -65,14 +65,16 @@ function IterGroup({ group, selectedFile, onSelect, isLatest, nowMs }: {
   const isComplete = !!meta?.completedAt;
   const canShowRunning = isLatest && !isComplete;
   const runningElapsed = canShowRunning
-    && (meta?.prover?.status === 'running' || meta?.plan?.status === 'running' || meta?.review?.status === 'running')
+    && (meta?.prover?.status === 'running' || meta?.plan?.status === 'running'
+        || meta?.review?.status === 'running' || meta?.refactor?.status === 'running')
     ? fmtElapsedMinutes(meta?.startedAt, nowMs)
     : '';
 
-  // Only the latest iteration may present a running/live state.
+  // Determine the currently active phase. Order: review > prover > refactor > plan
   const activePhase = canShowRunning && meta
     ? (meta.review?.status === 'running' ? 'review'
       : meta.prover?.status === 'running' ? 'prover'
+      : meta.refactor?.status === 'running' ? 'refactor'
       : meta.plan?.status === 'running' ? 'plan'
       : meta.stage)
     : undefined;
@@ -87,7 +89,9 @@ function IterGroup({ group, selectedFile, onSelect, isLatest, nowMs }: {
         {meta?.mode === 'parallel' && <span className={styles.groupMode}>∥</span>}
         {isComplete && <span className={styles.groupDone}>✓</span>}
         {canShowRunning && activePhase && <span className={styles.groupStage}>{activePhase}</span>}
-        {canShowRunning && (meta?.prover?.status === 'running' || meta?.plan?.status === 'running' || meta?.review?.status === 'running') && <span className={styles.groupLive}>●</span>}
+        {canShowRunning && (meta?.prover?.status === 'running' || meta?.plan?.status === 'running'
+          || meta?.review?.status === 'running' || meta?.refactor?.status === 'running')
+          && <span className={styles.groupLive}>●</span>}
         {runningElapsed && <span className={styles.groupElapsed}>{runningElapsed}</span>}
       </div>
 
@@ -96,6 +100,7 @@ function IterGroup({ group, selectedFile, onSelect, isLatest, nowMs }: {
           {meta && (
             <div className={styles.metaBar}>
               <PhaseTag label="plan" status={canShowRunning ? meta.plan?.status : (meta.plan?.status === 'done' ? 'done' : undefined)} secs={meta.plan?.durationSecs} />
+              <PhaseTag label="refactor" status={canShowRunning ? meta.refactor?.status : (meta.refactor?.status === 'done' ? 'done' : undefined)} secs={meta.refactor?.durationSecs} />
               <PhaseTag label="prover" status={canShowRunning ? meta.prover?.status : (meta.prover?.status === 'done' ? 'done' : undefined)} secs={meta.prover?.durationSecs} />
               <PhaseTag label="review" status={canShowRunning ? meta.review?.status : (meta.review?.status === 'done' ? 'done' : undefined)} secs={meta.review?.durationSecs} />
               <ProverStatusBar provers={canShowRunning ? meta.provers : Object.fromEntries(Object.entries(meta.provers || {}).map(([k, v]) => [k, { ...v, status: v.status === 'done' ? 'done' : 'stale' }]))} />
@@ -137,6 +142,8 @@ function IterGroup({ group, selectedFile, onSelect, isLatest, nowMs }: {
 // --- Role tag colors ---
 const ROLE_COLORS: Record<string, string> = {
   plan: 'var(--blue)',
+  'plan-post-refactor': 'var(--blue)',
+  refactor: '#e36209',
   prover: 'var(--purple)',
   review: 'var(--orange)',
 };

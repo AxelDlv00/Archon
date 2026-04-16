@@ -36,6 +36,7 @@ export interface LogGroup {
     completedAt?: string;
     wallTimeSecs?: number;
     plan?: { status: string; durationSecs?: number };
+    refactor?: { status: string; durationSecs?: number };
     prover?: { status: string; durationSecs?: number };
     review?: { status: string; durationSecs?: number };
     provers?: Record<string, { file: string; status: string }>;
@@ -128,6 +129,7 @@ export interface IterationMeta {
   completedAt?: string;
   wallTimeSecs?: number;
   plan?: { status: string; durationSecs?: number };
+  refactor?: { status: string; durationSecs?: number };
   prover?: { status: string; durationSecs?: number };
   review?: { status: string; durationSecs?: number };
   provers?: Record<string, ProverMeta>;
