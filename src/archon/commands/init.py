@@ -374,8 +374,9 @@ def _step2_copy_prompts(state_dir: Path, fresh: bool) -> None:
 def _step3_lean_lsp_mcp(project_path: Path, fresh: bool) -> None:
     """Install lean-lsp MCP server at project scope.
 
-    On re-init, check whether archon-lean-lsp is already registered with Claude Code
-    before attempting to add — re-registering can break active Claude Code sessions.
+    If archon-lean-lsp is already registered with Claude Code, it will be
+    removed and re-registered to ensure the path points to the new installation.
+    This prevents broken paths if the user deletes the old Archon folder.
     """
     log.phase(3, "Installing lean-lsp MCP server (project scope)")
 
@@ -385,28 +386,33 @@ def _step3_lean_lsp_mcp(project_path: Path, fresh: bool) -> None:
     existing = _run(["claude", "mcp", "list"], cwd=project_path)
     already_registered = "archon-lean-lsp" in (existing.stdout or "")
 
-    if already_registered and not fresh:
-        log.success("archon-lean-lsp is already registered — leaving it alone")
-        log.step("If you need to re-register: claude mcp remove archon-lean-lsp -s project, then re-run")
-    else:
-        for name in _find_global_mcp_lean_lsp():
-            log.warn(f"Found conflicting MCP server '{name}' in global config")
-            log.step("Disabling for this project — Archon's version will be used instead")
-            _run(["claude", "mcp", "remove", name, "-s", "project"], cwd=project_path)
-            log.success(f"Disabled '{name}' for this project")
+    # Remove existing registration to clear old paths before re-adding
+    if already_registered:
+        log.step("Found existing archon-lean-lsp. Removing old registration to update paths...")
+        _run(["claude", "mcp", "remove", "archon-lean-lsp", "-s", "project"], cwd=project_path)
 
-        r = _run(
-            ["claude", "mcp", "add", "archon-lean-lsp", "-s", "project", "--",
-             "uv", "run", "--directory", str(lean_lsp_dir), "lean-lsp-mcp"],
-            cwd=project_path,
-        )
-        output = r.stdout + r.stderr
-        if "already exists" in output.lower():
-            log.success("archon-lean-lsp already configured")
-        elif r.returncode == 0:
-            log.success("archon-lean-lsp added (project scope)")
-        else:
-            log.error(f"Failed to add archon-lean-lsp: {output.strip()}")
+    # Disable conflicting global plugins
+    for name in _find_global_mcp_lean_lsp():
+        log.warn(f"Found conflicting MCP server '{name}' in global config")
+        log.step("Disabling for this project — Archon's version will be used instead")
+        _run(["claude", "mcp", "remove", name, "-s", "project"], cwd=project_path)
+        log.success(f"Disabled '{name}' for this project")
+
+    # Add the MCP server with the new, updated path
+    r = _run(
+        ["claude", "mcp", "add", "archon-lean-lsp", "-s", "project", "--",
+         "uv", "run", "--directory", str(lean_lsp_dir), "lean-lsp-mcp"],
+        cwd=project_path,
+    )
+    
+    output = r.stdout + r.stderr
+    
+    if "already exists" in output.lower():
+        log.success("archon-lean-lsp already configured")
+    elif r.returncode == 0:
+        log.success("archon-lean-lsp added with updated paths (project scope)")
+    else:
+        log.error(f"Failed to add archon-lean-lsp: {output.strip()}")
 
 
 def _step4_skills(project_path: Path, fresh: bool) -> None:

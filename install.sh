@@ -5,7 +5,7 @@ set -e
 TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
-curl -L https://github.com/AxelDlv00/Archon/archive/refs/heads/main.tar.gz -o archon.tar.gz
+curl -L https://github.com/frenzymath/Archon/archive/refs/heads/main.tar.gz -o archon.tar.gz
 tar -xzf archon.tar.gz
 cd Archon-main
 
