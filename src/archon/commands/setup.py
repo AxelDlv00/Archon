@@ -520,31 +520,15 @@ def _check_tex_toolchain() -> bool:
 
 def _check_leanblueprint() -> bool:
     """Install (or upgrade) the `leanblueprint` Python CLI.
-
-    Prefers `uv tool` (isolated, no system pip pollution) when available,
-    falling back to `pip install --user`. Always attempts an upgrade so
-    users tracking master get the latest.
     """
     already = _has("leanblueprint")
 
-    if _has("uv"):
-        action = "Upgrading" if already else "Installing"
-        log.step(f"{action} leanblueprint via `uv tool`...")
-        # `uv tool install --upgrade` installs if absent and upgrades if present.
-        r = _run(["uv", "tool", "install", "--upgrade", "leanblueprint"])
-        if r.returncode != 0:
-            log.warn(f"uv tool install failed: {(r.stderr or r.stdout).strip()}")
-            log.step("Falling back to pip --user...")
-            _run([sys.executable, "-m", "pip", "install", "--user", "--upgrade", "leanblueprint"])
-    else:
-        action = "Upgrading" if already else "Installing"
-        log.step(f"{action} leanblueprint via pip --user...")
-        r = _run([sys.executable, "-m", "pip", "install", "--user", "--upgrade", "leanblueprint"])
-        if r.returncode != 0:
-            log.warn(f"pip install failed: {(r.stderr or r.stdout).strip()}")
 
-    # uv tool puts binaries in ~/.local/bin; pip --user likewise.
-    os.environ["PATH"] = f"{Path.home() / '.local' / 'bin'}{os.pathsep}{os.environ['PATH']}"
+    action = "Upgrading" if already else "Installing"
+    log.step(f"{action} leanblueprint via pip --user...")
+    r = _run([sys.executable, "-m", "pip", "install", "--user", "--upgrade", "leanblueprint"])
+    if r.returncode != 0:
+        log.warn(f"pip install failed: {(r.stderr or r.stdout).strip()}")
 
     if _has("leanblueprint"):
         log.success(f"leanblueprint: {_version(['leanblueprint', '--version'])}")
