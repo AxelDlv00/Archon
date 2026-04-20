@@ -21,6 +21,7 @@ Read the mathematical justification carefully — it tells you the intent behind
 - Change quantifier ordering in lemma statements
 - Add new definitions, structures, or type classes
 - Insert `sorry` at proof sites broken by your changes
+- Create new `.lean` files or back-up existing ones with `.bak` extension 
 
 ### What you MUST do
 - **Keep all files compiling.** After every change, check compilation with `lean_diagnostic_messages`. If a change breaks downstream proofs, insert `sorry` at the broken sites. The prover will fill them later.
