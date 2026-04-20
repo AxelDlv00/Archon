@@ -21,6 +21,8 @@ from archon.commands.tooling.git import Git
 from archon.commands.tooling.lake import Lake
 from archon.commands.tooling.stage import StageReport, scan_project
 
+from archon import log
+
 
 # File extensions that we consider "informal / reference material" and
 # that should live under references/ rather than at the project root.
@@ -358,10 +360,22 @@ This launches the plan → prove → review loop and opens a dashboard.
         self.path = Path(project_path).resolve()
 
     def ensure_readme(self, title: str | None = None, lean_root: str | None = None) -> bool:
-        """Write README.md if missing. Returns True iff it was created."""
+        """Write README.md if missing, or if it lacks the Archon signature."""
         readme = self.path / "README.md"
+
         if readme.exists():
-            return False
+            content = readme.read_text(encoding="utf-8")
+            
+            # If the file contains the Archon signature, we assume it's already been set up and skip it.
+            if "archon:readme" in content:
+                return False
+                
+            # If the file is somewhat long, it might be a user's custom README 
+            if len(content.strip()) > 150:
+                backup = self.path / "README.old.md"
+                readme.rename(backup)
+                log.warn(f"Backed up existing README.md to {backup} since it lacked the Archon signature.")
+
         readme.write_text(
             self.README_TEMPLATE.format(
                 title=title or _titlecase(self.path.name),

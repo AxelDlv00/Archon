@@ -23,6 +23,11 @@ from typing import Optional
 import typer
 
 from archon import log
+from archon.commands.tooling.blueprint import BlueprintServer
+from archon.commands.tooling.iteration import (
+    IterationFinalizer,
+    IterationFinalizationReport,
+)
 from archon.runner import (
     build_parallel_prover_prompt,
     build_plan_prompt,
@@ -81,11 +86,6 @@ def _find_free_port(start: int = 8080, attempts: int = 20) -> int | None:
 
 
 def _start_dashboard(project_path: Path, open_browser: bool) -> tuple[subprocess.Popen | None, int | None]:
-    """Start the dashboard UI as a background process.
-
-    Returns (process, port) or (None, None) on failure. Registers an atexit
-    hook so the process is cleaned up when `archon loop` exits.
-    """
     if not shutil.which("node") or not shutil.which("npm"):
         log.warn("Dashboard skipped: Node.js / npm not found (run: archon setup)")
         return None, None
@@ -95,21 +95,18 @@ def _start_dashboard(project_path: Path, open_browser: bool) -> tuple[subprocess
         log.warn("Dashboard skipped: could not find a free port in 8080–8099")
         return None, None
 
-    # Delegate to `archon dashboard` so all the build/install logic lives in one place.
     cmd = ["archon", "dashboard", str(project_path), "--port", str(port)]
-
     try:
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True,  # so Ctrl-C in loop doesn't hit the dashboard
+            start_new_session=True,
         )
     except Exception as e:
         log.warn(f"Dashboard failed to start: {e}")
         return None, None
 
-    # Give it a moment to bind
     for _ in range(10):
         time.sleep(0.5)
         if not _port_free(port):
@@ -146,11 +143,67 @@ def _start_dashboard(project_path: Path, open_browser: bool) -> tuple[subprocess
     return proc, port
 
 
+def _start_blueprint_server(project_path: Path) -> tuple[BlueprintServer | None, str | None]:
+    """Start the blueprint web server. Returns (server, url) or (None, None).
+
+    The server can only start if blueprint/web/ exists (has been built by
+    `leanblueprint web` at least once). The caller is expected to re-try
+    this after the first iteration's finalize step builds the web output.
+    """
+    server = BlueprintServer(project_path)
+    if not server.available:
+        log.info("Blueprint server deferred: blueprint/web/ not built yet — "
+                 "will try again after the first iteration's finalize step.")
+        return server, None
+
+    proc, port = server.start()
+    if proc is None or port is None:
+        log.warn("Blueprint server failed to start")
+        return server, None
+
+    url = f"http://localhost:{port}"
+    log.panel(
+        f"Blueprint preview at [bold cyan]{url}[/bold cyan]\n"
+        f"Serves the HTML rendering of blueprint/ — refreshes on each iteration's "
+        f"`leanblueprint web` build.",
+        title="Blueprint",
+        style="cyan",
+    )
+    atexit.register(server.stop)
+    return server, url
+
+
+def _maybe_start_deferred_blueprint_server(
+    server: BlueprintServer | None,
+    current_url: str | None,
+) -> str | None:
+    """If the server hasn't launched yet but is now available, start it.
+
+    Called after each iteration's finalize step. Returns the updated URL.
+    """
+    if server is None or current_url is not None:
+        return current_url
+    if not server.available:
+        return None
+
+    proc, port = server.start()
+    if proc is None or port is None:
+        return None
+    url = f"http://localhost:{port}"
+    log.panel(
+        f"Blueprint preview at [bold cyan]{url}[/bold cyan]\n"
+        f"First `leanblueprint web` build completed — server is live.",
+        title="Blueprint",
+        style="cyan",
+    )
+    atexit.register(server.stop)
+    return url
+
+
 # ── sorry counting ───────────────────────────────────────────────────
 
 
 def _count_sorries(project_path: Path) -> int | None:
-    """Count sorries using the bundled sorry_analyzer, or fallback to grep."""
     analyzer = _data_path("skills/lean4/lib/scripts/sorry_analyzer.py")
     if analyzer.exists():
         try:
@@ -166,7 +219,6 @@ def _count_sorries(project_path: Path) -> int | None:
         except Exception:
             pass
 
-    # Fallback: grep
     try:
         r = subprocess.run(
             ["bash", "-c",
@@ -188,7 +240,6 @@ def _count_sorries(project_path: Path) -> int | None:
 
 
 def _check_informal_agent_keys() -> None:
-    """Warn once if no API keys are set for the informal agent."""
     keys = ("OPENAI_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY")
     if not any(os.environ.get(k) for k in keys):
         log.warn("No API keys for informal agent (OPENAI_API_KEY / GEMINI_API_KEY / OPENROUTER_API_KEY)")
@@ -199,14 +250,12 @@ def _check_informal_agent_keys() -> None:
 
 
 def _read_refactor_directive(state_dir: Path) -> str | None:
-    """Read and return the refactor directive if present and non-empty."""
     directive_file = state_dir / "REFACTOR_DIRECTIVE.md"
     if not directive_file.exists():
         return None
     content = directive_file.read_text().strip()
     if not content:
         return None
-    # Ignore placeholder content (just comments and headers).
     lines = [l.strip() for l in content.splitlines() if l.strip() and not l.strip().startswith("<!--")]
     non_header = [l for l in lines if not l.startswith("#")]
     if not non_header:
@@ -215,7 +264,6 @@ def _read_refactor_directive(state_dir: Path) -> str | None:
 
 
 def _archive_refactor_directive(directive: str, iter_dir: Path) -> None:
-    """Archive the refactor directive into the iteration directory before clearing."""
     iter_dir.mkdir(parents=True, exist_ok=True)
     archive_path = iter_dir / "refactor-directive.md"
     header = dedent(f"""\
@@ -227,7 +275,6 @@ def _archive_refactor_directive(directive: str, iter_dir: Path) -> None:
 
 
 def _archive_refactor_report(state_dir: Path, iter_dir: Path) -> None:
-    """Copy task_results/refactor.md into the iteration directory (if it exists)."""
     report_src = state_dir / "task_results" / "refactor.md"
     if not report_src.exists():
         return
@@ -240,7 +287,6 @@ def _archive_refactor_report(state_dir: Path, iter_dir: Path) -> None:
 
 
 def _clear_refactor_directive(state_dir: Path) -> None:
-    """Clear the refactor directive after execution."""
     directive_file = state_dir / "REFACTOR_DIRECTIVE.md"
     if directive_file.exists():
         directive_file.write_text(
@@ -254,7 +300,6 @@ def _clear_refactor_directive(state_dir: Path) -> None:
 def _build_post_refactor_plan_prompt(
     project_name: str, project_path: Path, state_dir: Path, stage: str,
 ) -> str:
-    """Build a plan prompt for the post-refactor verification pass."""
     return dedent(f"""\
         You are the plan agent for project '{project_name}'. Current stage: {stage}.
         Project directory: {project_path}
@@ -282,11 +327,9 @@ def _run_refactor_phase(
     iter_meta: Path,
     verbose_logs: bool,
 ) -> bool:
-    """Run the refactor agent. Returns True if successful."""
     log.phase(2, "Refactor agent")
     log.info("Plan agent requested structural changes")
 
-    # Show a preview of the directive
     directive_lines = directive.strip().splitlines()
     preview_lines = [l.strip() for l in directive_lines
                      if l.strip() and not l.strip().startswith("#") and not l.strip().startswith("<!--")]
@@ -295,10 +338,7 @@ def _run_refactor_phase(
     if len(preview_lines) > 5:
         log.step("... (%d more lines)" % (len(preview_lines) - 5))
 
-    # Archive the directive BEFORE the refactor agent runs, so even if the agent
-    # crashes we still have a record of what was asked.
     _archive_refactor_directive(directive, iter_dir)
-
     write_meta(iter_meta, **{"refactor.status": "running"})
 
     refactor_start = time.monotonic()
@@ -321,11 +361,10 @@ def _run_refactor_phase(
     return ok
 
 
-# ── snapshot helpers ──────────────────────────────────────────────────
+# ── snapshot / env helpers ────────────────────────────────────────────
 
 
 def _snapshot_baseline(file_path: Path, snap_dir: Path) -> None:
-    """Copy a .lean file as baseline.lean into the given snapshot directory."""
     snap_dir.mkdir(parents=True, exist_ok=True)
     try:
         shutil.copy2(file_path, snap_dir / "baseline.lean")
@@ -339,7 +378,6 @@ def _set_prover_env(
     project_path: Path | str,
     serial_mode: bool = False,
 ) -> dict[str, str]:
-    """Set ARCHON_SNAPSHOT_DIR/PROVER_JSONL/PROJECT_PATH env vars and return the old values."""
     old = {}
     env_vars = {
         "ARCHON_SNAPSHOT_DIR": str(snap_dir),
@@ -348,7 +386,6 @@ def _set_prover_env(
     }
     if serial_mode:
         env_vars["ARCHON_SERIAL_MODE"] = "true"
-
     for k, v in env_vars.items():
         old[k] = os.environ.get(k)
         os.environ[k] = v
@@ -356,7 +393,6 @@ def _set_prover_env(
 
 
 def _unset_prover_env(old: dict[str, str]) -> None:
-    """Restore or unset ARCHON env vars from saved old values."""
     for k, v in old.items():
         if v is None:
             os.environ.pop(k, None)
@@ -374,7 +410,6 @@ def _preflight(project_path: Path, state_dir: Path, dry_run: bool) -> None:
         if not shutil.which("claude"):
             log.error("Claude Code is not installed. Run: archon setup")
             raise typer.Exit(1)
-
         r = subprocess.run(
             ["claude", "-p", "reply with OK", "--no-session-persistence"],
             capture_output=True, text=True,
@@ -395,7 +430,6 @@ def _preflight(project_path: Path, state_dir: Path, dry_run: bool) -> None:
 
 
 def _emit_parallel_round_end(iter_dir: Path, prover_count: int, failed: int) -> None:
-    """Write a parallel_round_end event to the iteration's JSONL log."""
     provers_dir = iter_dir / "provers"
     target = None
     if provers_dir.exists():
@@ -426,7 +460,6 @@ def _run_single_prover(
     snap_dir: Path | None = None,
     project_path: Path | None = None,
 ) -> bool:
-    """Entry point for a single prover (may run in subprocess)."""
     if snap_dir is not None and project_path is not None:
         old_env = _set_prover_env(
             snap_dir=snap_dir,
@@ -454,12 +487,9 @@ def _run_parallel_provers(
     verbose_logs: bool,
     dry_run: bool,
     dashboard_url: str | None = None,
+    blueprint_url: str | None = None,
 ) -> None:
-    """Parse objective files and launch one prover per file."""
     progress = state_dir / "PROGRESS.md"
-
-    # Archive task_results INTO the iteration dir, so the UI can surface them
-    # and logs/ stays tidy.
     archive_task_results(state_dir, iter_dir)
 
     sorry_files = parse_objective_files(progress, project_path)
@@ -477,7 +507,7 @@ def _run_parallel_provers(
             log.step(f"[dry-run] Prover: {rel}")
         return
 
-    # Single file → run serial
+    # Single file → run serial (but still with blueprint-aware prompt)
     if file_count == 1:
         rel = _relpath(sorry_files[0], project_path)
         slug = _file_slug(rel)
@@ -495,7 +525,11 @@ def _run_parallel_provers(
             project_path=project_path,
         )
         try:
-            prompt = build_prover_prompt(project_name, project_path, state_dir, stage)
+            base_prompt = build_parallel_prover_prompt(
+                project_name, project_path, state_dir, stage,
+                assigned_rel_lean_path=rel,
+            )
+            prompt = f"{base_prompt}\nYour assigned file: {rel}"
             ok = run_claude(prompt, cwd=project_path, log_base=prover_log, verbose_logs=verbose_logs)
         finally:
             _unset_prover_env(old_env)
@@ -505,12 +539,12 @@ def _run_parallel_provers(
 
     log.info(f"Found {file_count} file(s) — launching parallel provers (max {max_parallel} concurrent)")
 
-    base_prompt = build_parallel_prover_prompt(project_name, project_path, state_dir, stage)
-
     log.info("Watch progress:")
     if dashboard_url:
         log.step(f"Dashboard:       {dashboard_url}")
         log.step(f"Iteration view:  {dashboard_url}/logs")
+    if blueprint_url:
+        log.step(f"Blueprint:       {blueprint_url}")
     log.step(f"tail -f {iter_dir}/provers/*.jsonl")
     log.step(f"watch -n10 'ls -lt {state_dir}/task_results/'")
 
@@ -520,6 +554,13 @@ def _run_parallel_provers(
             rel = _relpath(f, project_path)
             slug = _file_slug(rel)
             prover_log = iter_dir / "provers" / slug
+
+            # Build a per-file prompt so each prover gets the blueprint
+            # chapter pointer for its specific file.
+            base_prompt = build_parallel_prover_prompt(
+                project_name, project_path, state_dir, stage,
+                assigned_rel_lean_path=rel,
+            )
             prompt = f"{base_prompt}\nYour assigned file: {rel}"
 
             snap_dir = iter_dir / "snapshots" / slug
@@ -530,12 +571,8 @@ def _run_parallel_provers(
 
             future = pool.submit(
                 _run_single_prover,
-                prompt,
-                project_path,
-                prover_log,
-                verbose_logs,
-                snap_dir,
-                project_path,
+                prompt, project_path, prover_log, verbose_logs,
+                snap_dir, project_path,
             )
             futures[future] = (rel, slug)
 
@@ -618,6 +655,37 @@ def _run_review_phase(
         )
 
 
+# ── finalize phase ────────────────────────────────────────────────────
+
+
+def _run_finalize_phase(
+    project_path: Path,
+    iter_num: int,
+    stage: str,
+    sorry_count: int | None,
+    iter_meta: Path,
+    *,
+    do_git: bool,
+    do_lake_build: bool,
+    do_blueprint_web: bool,
+) -> IterationFinalizationReport:
+    log.phase(5, "Finalize (git / lake / blueprint)")
+
+    finalizer = IterationFinalizer(
+        project_path,
+        do_git=do_git,
+        do_lake_build=do_lake_build,
+        do_blueprint_web=do_blueprint_web,
+    )
+    report = finalizer.run(iter_num=iter_num, stage=stage, sorry_count=sorry_count)
+
+    write_meta(iter_meta, **report.to_meta_dict())
+    for w in report.warnings:
+        log.warn(w)
+
+    return report
+
+
 # ── main command ──────────────────────────────────────────────────────
 
 
@@ -649,6 +717,22 @@ def loop(
         False, "--no-refactor",
         help="Skip the refactor phase even if a directive exists.",
     ),
+    no_finalize: bool = typer.Option(
+        False, "--no-finalize",
+        help="Skip the end-of-iteration git commit / lake build / blueprint web.",
+    ),
+    no_git_commit: bool = typer.Option(
+        False, "--no-git-commit",
+        help="Skip only the per-iteration git commit (keeps lake/blueprint).",
+    ),
+    no_lake_build: bool = typer.Option(
+        False, "--no-lake-build",
+        help="Skip only the per-iteration `lake build`.",
+    ),
+    no_blueprint_web: bool = typer.Option(
+        False, "--no-blueprint-web",
+        help="Skip only the per-iteration `leanblueprint web`.",
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run",
         help="Print prompts without launching Claude.",
@@ -657,6 +741,10 @@ def loop(
         False, "--no-dashboard",
         help="Do not auto-start the web dashboard.",
     ),
+    blueprint_server_flag: bool = typer.Option(
+        False, "--blueprint-server",
+        help="Start a local HTTP server serving blueprint/web/ alongside the dashboard.",
+    ),
     open_browser: bool = typer.Option(
         False, "--open",
         help="Open the dashboard in a browser as soon as it starts.",
@@ -664,14 +752,15 @@ def loop(
 ) -> None:
     """Start the automated plan → prove → review loop.
 
-    Alternates plan and prover agents through stages (autoformalize → prover
-    → polish) until COMPLETE or max iterations reached.
+    Each iteration:
+      1. Plan agent (reads project state, writes objectives)
+      2. Refactor agent (only if the plan wrote REFACTOR_DIRECTIVE.md)
+      3. Prover agent(s) — parallel or serial
+      4. Review agent (unless --no-review)
+      5. Finalize: git commit, lake build, leanblueprint web (non-fatal)
 
-    When the plan agent writes a REFACTOR_DIRECTIVE.md, a refactor agent runs
-    between plan and prover to restructure definitions across files.
-
-    By default, the web dashboard is launched in the background so you can
-    watch iterations live. Pass --no-dashboard to disable this.
+    By default the web dashboard is launched in the background. Pass
+    --blueprint-server to also start the blueprint HTML server.
     """
     resolved = Path(project_path).resolve()
     project_name = resolved.name
@@ -694,6 +783,11 @@ def loop(
     if parallel:
         prover_mode += f" (max {max_parallel})"
 
+    # Resolve per-step finalize flags.
+    do_git = not no_finalize and not no_git_commit
+    do_lake = not no_finalize and not no_lake_build
+    do_bp_web = not no_finalize and not no_blueprint_web
+
     config = {
         "Project": str(resolved),
         "Stage": force_stage or current_stage,
@@ -701,7 +795,9 @@ def loop(
         "Prover mode": prover_mode,
         "Review": "enabled" if not no_review else "disabled",
         "Refactor": "enabled" if not no_refactor else "disabled",
+        "Finalize": _describe_finalize(do_git, do_lake, do_bp_web),
         "Dashboard": "disabled" if no_dashboard else "enabled",
+        "Blueprint server": "enabled" if blueprint_server_flag else "disabled",
         "Logs": str(log_dir),
         "User hints": str(state_dir / "USER_HINTS.md"),
     }
@@ -711,13 +807,17 @@ def loop(
     log.header("Archon Loop")
     log.key_value(config)
 
-    # ── Start dashboard ──────────────────────────────────────────────
-    dashboard_proc: subprocess.Popen | None = None
+    # ── Start background services ────────────────────────────────────
     dashboard_url: str | None = None
+    blueprint_server: BlueprintServer | None = None
+    blueprint_url: str | None = None
     if not dry_run and not no_dashboard:
-        dashboard_proc, dashboard_port = _start_dashboard(resolved, open_browser)
+        _, dashboard_port = _start_dashboard(resolved, open_browser)
         if dashboard_port:
             dashboard_url = f"http://localhost:{dashboard_port}"
+
+    if not dry_run and blueprint_server_flag:
+        blueprint_server, blueprint_url = _start_blueprint_server(resolved)
 
     if is_complete(progress_file, force_stage):
         log.success(f"Project '{project_name}' is COMPLETE. Nothing to do.")
@@ -725,19 +825,14 @@ def loop(
             log.step(f"Review results in the dashboard: {dashboard_url}")
         return
 
-    # ── environment checks ────────────────────────────────────────────
-
     if not dry_run:
         _check_informal_agent_keys()
-
-    # ── initial sorry count ───────────────────────────────────────────
 
     initial_sorry = _count_sorries(resolved) if not dry_run else None
     if initial_sorry is not None:
         log.info(f"Starting sorry count: {initial_sorry}")
 
     if not dashboard_url:
-        # If the dashboard was disabled, still hint at how to start one manually.
         log.info(f"To visualize progress and logs, run: `archon dashboard {project_path}`")
 
     loop_start = time.monotonic()
@@ -753,22 +848,25 @@ def loop(
         log.iteration(i + 1, max_iterations, current_stage, project_name)
         if dashboard_url:
             log.step(f"Live view: {dashboard_url}")
+        if blueprint_url:
+            log.step(f"Blueprint: {blueprint_url}")
 
         iter_start = time.monotonic()
 
-        # Set up iteration directory
+        # ── Iteration directory setup ───────────────────────────────
         iter_dir: Path | None = None
         iter_meta: Path | None = None
+        iter_num_local: int = 0
         if not dry_run:
-            iter_num = next_iter_num(log_dir)
-            iter_dir = log_dir / f"iter-{iter_num:03d}"
+            iter_num_local = next_iter_num(log_dir)
+            iter_dir = log_dir / f"iter-{iter_num_local:03d}"
             iter_meta = iter_dir / "meta.json"
             iter_dir.mkdir(parents=True, exist_ok=True)
             if parallel:
                 (iter_dir / "provers").mkdir(exist_ok=True)
             write_meta(
                 iter_meta,
-                iteration=iter_num,
+                iteration=iter_num_local,
                 stage=current_stage,
                 mode="parallel" if parallel else "serial",
                 startedAt=utcnow_iso(),
@@ -778,7 +876,6 @@ def loop(
 
         # ── Phase 1: Plan ──
         log.phase(1, "Plan agent")
-
         plan_start = time.monotonic()
         plan_prompt = build_plan_prompt(project_name, resolved, state_dir, current_stage)
 
@@ -800,18 +897,15 @@ def loop(
 
         current_stage = read_stage(progress_file, force_stage)
 
-        # ── Phase 2 (conditional): Refactor ──
-        refactor_ran = False
+        # ── Phase 2: Refactor (conditional) ──
         if not no_refactor and not dry_run:
             directive = _read_refactor_directive(state_dir)
             if directive:
-                refactor_ran = True
                 _run_refactor_phase(
                     project_name, resolved, state_dir, directive,
                     iter_dir, iter_meta, verbose_logs,
                 )
 
-                # Re-run plan agent in post-refactor verification mode
                 log.step("Re-running plan agent to verify refactor results...")
                 post_refactor_prompt = _build_post_refactor_plan_prompt(
                     project_name, resolved, state_dir, current_stage,
@@ -819,21 +913,14 @@ def loop(
                 plan_log2 = iter_dir / "plan-post-refactor"
                 run_claude(post_refactor_prompt, cwd=resolved, log_base=plan_log2, verbose_logs=verbose_logs)
 
-                # Anti-loop guard: if the post-refactor plan agent wrote ANOTHER
-                # directive (despite being told not to), clear it and log a warning.
-                # It will get another chance in the next iteration.
                 rogue_directive = _read_refactor_directive(state_dir)
                 if rogue_directive:
                     log.warn("Post-refactor plan agent wrote another REFACTOR_DIRECTIVE.md — "
                              "clearing it to prevent infinite loop. It will be reconsidered next iteration.")
                     _clear_refactor_directive(state_dir)
 
-                # Archive the refactor agent's report now that the post-refactor
-                # plan has read it (but before the next prover round sweeps away
-                # task_results/).
                 _archive_refactor_report(state_dir, iter_dir)
 
-                # Check sorry count after refactor
                 sorry_after_refactor = _count_sorries(resolved)
                 if sorry_after_refactor is not None:
                     log.info(f"Sorry count after refactor: {sorry_after_refactor}")
@@ -856,19 +943,20 @@ def loop(
                 project_name, resolved, state_dir, current_stage,
                 iter_dir, iter_meta, max_parallel, verbose_logs, dry_run,
                 dashboard_url=dashboard_url,
+                blueprint_url=blueprint_url,
             )
         else:
+            # Serial mode — no per-file blueprint pointer since we don't know
+            # which file gets touched in which order. Plan agent's objectives
+            # mention the chapters.
             prover_prompt = build_prover_prompt(project_name, resolved, state_dir, current_stage)
             if dry_run:
                 log.step("[dry-run] Prover prompt:")
                 print(prover_prompt)
             else:
-                # Archive existing task_results into iter_dir before this prover
-                # round overwrites them (matches the parallel-mode behavior).
                 archive_task_results(state_dir, iter_dir)
 
                 prover_log = iter_dir / "prover"
-
                 sorry_files = parse_objective_files(progress_file, resolved)
                 if sorry_files:
                     for sf in sorry_files:
@@ -898,23 +986,20 @@ def loop(
         # ── Phase 4: Review ──
         if not no_review and not dry_run:
             log.phase(4, "Review agent")
-
             review_start = time.monotonic()
             write_meta(iter_meta, **{"review.status": "running"})
-
             _run_review_phase(
                 project_name, resolved, state_dir, current_stage,
                 iter_dir, verbose_logs,
             )
-
             review_secs = int(time.monotonic() - review_start)
             log.info(f"Review phase finished ({review_secs}s)")
             if dashboard_url:
                 log.step(f"Journal: {dashboard_url}/journal")
             write_meta(iter_meta, **{"review.status": "done", "review.durationSecs": review_secs})
 
-        # ── Post-iteration: sorry count ───────────────────────────────
-
+        # ── Post-iteration: sorry count ─────────────────────────────
+        sorry_after: int | None = None
         if not dry_run:
             sorry_after = _count_sorries(resolved)
             if sorry_after is not None:
@@ -931,6 +1016,26 @@ def loop(
                     log.info(f"Sorry count: {sorry_after}")
                 prev_sorry = sorry_after
 
+        # ── Phase 5: Finalize ───────────────────────────────────────
+        if not dry_run and (do_git or do_lake or do_bp_web):
+            _run_finalize_phase(
+                resolved,
+                iter_num=iter_num_local,
+                stage=current_stage,
+                sorry_count=sorry_after,
+                iter_meta=iter_meta,
+                do_git=do_git,
+                do_lake_build=do_lake,
+                do_blueprint_web=do_bp_web,
+            )
+
+            # The finalize step may have just built blueprint/web/ for the
+            # first time — try to start the server now if it was deferred.
+            if blueprint_server_flag and blueprint_url is None:
+                blueprint_url = _maybe_start_deferred_blueprint_server(
+                    blueprint_server, blueprint_url,
+                )
+
         iter_secs = int(time.monotonic() - iter_start)
         log.info(f"Iteration {i + 1} complete ({iter_secs}s)")
         if not dry_run:
@@ -943,8 +1048,7 @@ def loop(
                     data.model_rows() or None,
                 )
 
-    # ── Loop summary ──────────────────────────────────────────────────
-
+    # ── Loop summary ────────────────────────────────────────────────
     loop_secs = int(time.monotonic() - loop_start)
 
     if not is_complete(progress_file, force_stage):
@@ -961,12 +1065,21 @@ def loop(
     log.info(f"Total wall time: {loop_secs}s")
     data = cost_summary(log_dir)
     if data:
-        log.cost_table("Loop totals", data.totals_dict(), data.model_rows() or None)
+        log.cost_table("Loop totals (Note: This is indicative, it doesn't take into account pro subscriptions for instance)", data.totals_dict(), data.model_rows() or None)
 
     if dashboard_url:
         log.panel(
             f"Loop finished. The dashboard is still running at [bold cyan]{dashboard_url}[/bold cyan].\n"
-            f"Inspect results, then stop it with Ctrl-C or by closing this terminal.",
+            + (f"Blueprint preview: [bold cyan]{blueprint_url}[/bold cyan]\n" if blueprint_url else "")
+            + "Inspect results, then stop it with Ctrl-C or by closing this terminal.",
             title="Done",
             style="green",
         )
+
+
+def _describe_finalize(do_git: bool, do_lake: bool, do_bp: bool) -> str:
+    parts = []
+    if do_git: parts.append("git")
+    if do_lake: parts.append("lake build")
+    if do_bp: parts.append("blueprint web")
+    return ", ".join(parts) if parts else "disabled"
