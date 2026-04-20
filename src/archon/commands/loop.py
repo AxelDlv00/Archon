@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import re
 import shutil
+import signal
+import socket
 import subprocess
 import sys
 import time
+import webbrowser
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from importlib import resources
@@ -41,6 +45,7 @@ from archon.state import (
 )
 from archon.types import Stage
 
+
 def _data_path(sub_path: str = "") -> Path:
     root = resources.files("archon").joinpath(".archon-src")
     if sub_path:
@@ -57,6 +62,88 @@ def _relpath(path: Path, base: Path) -> str:
 
 def _file_slug(rel: str) -> str:
     return rel.replace("/", "_").replace(os.sep, "_").removesuffix(".lean")
+
+
+# ── dashboard auto-launch ─────────────────────────────────────────────
+
+
+def _port_free(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", port)) != 0
+
+
+def _find_free_port(start: int = 8080, attempts: int = 20) -> int | None:
+    for p in range(start, start + attempts):
+        if _port_free(p):
+            return p
+    return None
+
+
+def _start_dashboard(project_path: Path, open_browser: bool) -> tuple[subprocess.Popen | None, int | None]:
+    """Start the dashboard UI as a background process.
+
+    Returns (process, port) or (None, None) on failure. Registers an atexit
+    hook so the process is cleaned up when `archon loop` exits.
+    """
+    if not shutil.which("node") or not shutil.which("npm"):
+        log.warn("Dashboard skipped: Node.js / npm not found (run: archon setup)")
+        return None, None
+
+    port = _find_free_port(8080)
+    if port is None:
+        log.warn("Dashboard skipped: could not find a free port in 8080–8099")
+        return None, None
+
+    # Delegate to `archon dashboard` so all the build/install logic lives in one place.
+    cmd = ["archon", "dashboard", str(project_path), "--port", str(port)]
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,  # so Ctrl-C in loop doesn't hit the dashboard
+        )
+    except Exception as e:
+        log.warn(f"Dashboard failed to start: {e}")
+        return None, None
+
+    # Give it a moment to bind
+    for _ in range(10):
+        time.sleep(0.5)
+        if not _port_free(port):
+            break
+        if proc.poll() is not None:
+            log.warn("Dashboard process exited before binding its port")
+            return None, None
+
+    url = f"http://localhost:{port}"
+    log.panel(
+        f"Dashboard is live at [bold cyan]{url}[/bold cyan]\n"
+        f"Watch iterations, parallel provers, diffs, and the proof journal update live.",
+        title="Archon Dashboard",
+        style="cyan",
+    )
+
+    if open_browser:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+    def _cleanup():
+        if proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except Exception:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+    atexit.register(_cleanup)
+
+    return proc, port
 
 
 # ── sorry counting ───────────────────────────────────────────────────
@@ -117,10 +204,9 @@ def _read_refactor_directive(state_dir: Path) -> str | None:
     if not directive_file.exists():
         return None
     content = directive_file.read_text().strip()
-    # Ignore placeholder content
     if not content:
         return None
-    # Check if it's just the empty template
+    # Ignore placeholder content (just comments and headers).
     lines = [l.strip() for l in content.splitlines() if l.strip() and not l.strip().startswith("<!--")]
     non_header = [l for l in lines if not l.startswith("#")]
     if not non_header:
@@ -311,7 +397,6 @@ def _preflight(project_path: Path, state_dir: Path, dry_run: bool) -> None:
 def _emit_parallel_round_end(iter_dir: Path, prover_count: int, failed: int) -> None:
     """Write a parallel_round_end event to the iteration's JSONL log."""
     provers_dir = iter_dir / "provers"
-    # Append to any existing prover log, or create one at iter level
     target = None
     if provers_dir.exists():
         logs = sorted(provers_dir.glob("*.jsonl"))
@@ -368,6 +453,7 @@ def _run_parallel_provers(
     max_parallel: int,
     verbose_logs: bool,
     dry_run: bool,
+    dashboard_url: str | None = None,
 ) -> None:
     """Parse objective files and launch one prover per file."""
     progress = state_dir / "PROGRESS.md"
@@ -421,7 +507,10 @@ def _run_parallel_provers(
 
     base_prompt = build_parallel_prover_prompt(project_name, project_path, state_dir, stage)
 
-    log.info(f"Watch progress:")
+    log.info("Watch progress:")
+    if dashboard_url:
+        log.step(f"Dashboard:       {dashboard_url}")
+        log.step(f"Iteration view:  {dashboard_url}/logs")
     log.step(f"tail -f {iter_dir}/provers/*.jsonl")
     log.step(f"watch -n10 'ls -lt {state_dir}/task_results/'")
 
@@ -507,8 +596,8 @@ def _run_review_phase(
     else:
         combined = iter_dir / "prover.jsonl"
 
-    extract_script = _data_path("scripts/extract-attempts.py") if _data_path("scripts/extract-attempts.py").exists() else None
-    if extract_script and extract_script.exists():
+    extract_script = _data_path("scripts/extract-attempts.py")
+    if extract_script.exists():
         subprocess.run(
             [sys.executable, str(extract_script), str(combined), str(attempts_file)],
             capture_output=True,
@@ -521,8 +610,8 @@ def _run_review_phase(
     review_log = iter_dir / "review"
     run_claude(prompt, cwd=project_path, log_base=review_log, verbose_logs=verbose_logs)
 
-    validate_script = _data_path("scripts/validate-review.py") if _data_path("scripts/validate-review.py").exists() else None
-    if validate_script and validate_script.exists():
+    validate_script = _data_path("scripts/validate-review.py")
+    if validate_script.exists():
         subprocess.run(
             [sys.executable, str(validate_script), str(session_dir), str(attempts_file)],
             capture_output=True,
@@ -564,6 +653,14 @@ def loop(
         False, "--dry-run",
         help="Print prompts without launching Claude.",
     ),
+    no_dashboard: bool = typer.Option(
+        False, "--no-dashboard",
+        help="Do not auto-start the web dashboard.",
+    ),
+    open_browser: bool = typer.Option(
+        False, "--open",
+        help="Open the dashboard in a browser as soon as it starts.",
+    ),
 ) -> None:
     """Start the automated plan → prove → review loop.
 
@@ -572,6 +669,9 @@ def loop(
 
     When the plan agent writes a REFACTOR_DIRECTIVE.md, a refactor agent runs
     between plan and prover to restructure definitions across files.
+
+    By default, the web dashboard is launched in the background so you can
+    watch iterations live. Pass --no-dashboard to disable this.
     """
     resolved = Path(project_path).resolve()
     project_name = resolved.name
@@ -601,6 +701,7 @@ def loop(
         "Prover mode": prover_mode,
         "Review": "enabled" if not no_review else "disabled",
         "Refactor": "enabled" if not no_refactor else "disabled",
+        "Dashboard": "disabled" if no_dashboard else "enabled",
         "Logs": str(log_dir),
         "User hints": str(state_dir / "USER_HINTS.md"),
     }
@@ -610,8 +711,18 @@ def loop(
     log.header("Archon Loop")
     log.key_value(config)
 
+    # ── Start dashboard ──────────────────────────────────────────────
+    dashboard_proc: subprocess.Popen | None = None
+    dashboard_url: str | None = None
+    if not dry_run and not no_dashboard:
+        dashboard_proc, dashboard_port = _start_dashboard(resolved, open_browser)
+        if dashboard_port:
+            dashboard_url = f"http://localhost:{dashboard_port}"
+
     if is_complete(progress_file, force_stage):
         log.success(f"Project '{project_name}' is COMPLETE. Nothing to do.")
+        if dashboard_url:
+            log.step(f"Review results in the dashboard: {dashboard_url}")
         return
 
     # ── environment checks ────────────────────────────────────────────
@@ -625,7 +736,9 @@ def loop(
     if initial_sorry is not None:
         log.info(f"Starting sorry count: {initial_sorry}")
 
-    log.info(f"To visualize progress and logs, run: `archon dashboard {project_path}`")
+    if not dashboard_url:
+        # If the dashboard was disabled, still hint at how to start one manually.
+        log.info(f"To visualize progress and logs, run: `archon dashboard {project_path}`")
 
     loop_start = time.monotonic()
     prev_sorry = initial_sorry
@@ -638,6 +751,8 @@ def loop(
             break
 
         log.iteration(i + 1, max_iterations, current_stage, project_name)
+        if dashboard_url:
+            log.step(f"Live view: {dashboard_url}")
 
         iter_start = time.monotonic()
 
@@ -740,6 +855,7 @@ def loop(
             _run_parallel_provers(
                 project_name, resolved, state_dir, current_stage,
                 iter_dir, iter_meta, max_parallel, verbose_logs, dry_run,
+                dashboard_url=dashboard_url,
             )
         else:
             prover_prompt = build_prover_prompt(project_name, resolved, state_dir, current_stage)
@@ -774,6 +890,8 @@ def loop(
 
         prover_secs = int(time.monotonic() - prover_start)
         log.info(f"Prover phase finished ({prover_secs}s)")
+        if dashboard_url:
+            log.step(f"Inspect diffs: {dashboard_url}/diffs")
         if not dry_run:
             write_meta(iter_meta, **{"prover.status": "done", "prover.durationSecs": prover_secs})
 
@@ -791,6 +909,8 @@ def loop(
 
             review_secs = int(time.monotonic() - review_start)
             log.info(f"Review phase finished ({review_secs}s)")
+            if dashboard_url:
+                log.step(f"Journal: {dashboard_url}/journal")
             write_meta(iter_meta, **{"review.status": "done", "review.durationSecs": review_secs})
 
         # ── Post-iteration: sorry count ───────────────────────────────
@@ -842,3 +962,11 @@ def loop(
     data = cost_summary(log_dir)
     if data:
         log.cost_table("Loop totals", data.totals_dict(), data.model_rows() or None)
+
+    if dashboard_url:
+        log.panel(
+            f"Loop finished. The dashboard is still running at [bold cyan]{dashboard_url}[/bold cyan].\n"
+            f"Inspect results, then stop it with Ctrl-C or by closing this terminal.",
+            title="Done",
+            style="green",
+        )
