@@ -95,18 +95,7 @@ def _update_gitignore(project_path: Path, entry: str) -> None:
 
 
 def _detect_existing_archon(state_dir: Path) -> dict:
-    """Detect whether the project has already been initialized (by any Archon version).
-
-    Returns a dict describing what was found:
-      {
-        "exists": bool,               # .archon/ exists at all
-        "has_progress": bool,         # PROGRESS.md present
-        "has_prompts": bool,          # .archon/prompts/ present
-        "prompts_are_symlinks": bool, # old-layout marker (pre-CLI fork)
-        "stage": str,                 # current stage or "init"
-        "version": str,               # "legacy-symlink" | "current-copy" | "unknown"
-      }
-    """
+    """Detect whether the project has already been initialized (by any Archon version)."""
     info = {
         "exists": state_dir.is_dir(),
         "has_progress": False,
@@ -126,7 +115,6 @@ def _detect_existing_archon(state_dir: Path) -> dict:
     prompts_dir = state_dir / "prompts"
     if prompts_dir.is_dir():
         info["has_prompts"] = True
-        # Old layout used symlinks back to the Archon repo; new layout copies
         md_files = list(prompts_dir.glob("*.md"))
         if md_files and any(f.is_symlink() for f in md_files):
             info["prompts_are_symlinks"] = True
@@ -138,10 +126,7 @@ def _detect_existing_archon(state_dir: Path) -> dict:
 
 
 def _prompt_reinit_mode(info: dict) -> str:
-    """Ask the user how to handle an already-initialized project.
-
-    Returns one of: "keep", "merge", "overwrite", "abort".
-    """
+    """Ask the user how to handle an already-initialized project."""
     log.warn("This project has already been initialized with Archon.")
     log.key_value({
         "Detected layout": info["version"],
@@ -181,16 +166,12 @@ def _prompt_reinit_mode(info: dict) -> str:
 
 
 def _stage_bundled_prompts(state_dir: Path) -> Path:
-    """Copy bundled prompts to a staging dir so Claude can diff them against existing local copies.
-
-    Returns the staging directory path.
-    """
+    """Copy bundled prompts to a staging dir so Claude can diff them against existing local copies."""
     staging = state_dir / ".archon-incoming"
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True, exist_ok=True)
 
-    # Stage prompts
     prompts_src = _data_path("prompts")
     if prompts_src.exists():
         prompts_stage = staging / "prompts"
@@ -198,7 +179,6 @@ def _stage_bundled_prompts(state_dir: Path) -> Path:
         for f in sorted(prompts_src.glob("*.md")):
             shutil.copy2(f, prompts_stage / f.name)
 
-    # Stage CLAUDE.md + templates
     template_dir = _data_path("archon-template")
     if template_dir.exists():
         for name in ("CLAUDE.md",):
@@ -210,11 +190,7 @@ def _stage_bundled_prompts(state_dir: Path) -> Path:
 
 
 def _merge_prompts_with_claude(project_path: Path, state_dir: Path, staging: Path) -> None:
-    """Launch Claude Code in a focused merge session.
-
-    Claude diffs each bundled prompt against the local copy and asks the user
-    (per file) whether to keep local, take incoming, or merge.
-    """
+    """Launch Claude Code in a focused merge session."""
     log.phase(0, "Reconciling local vs. bundled Archon files")
     log.step("Launching Claude Code to walk you through the differences file by file.")
     log.step("For each differing file you can choose: keep local, take new, or merge manually.")
@@ -291,10 +267,18 @@ def _print_diff_summary(state_dir: Path, staging: Path) -> None:
 # ── steps ─────────────────────────────────────────────────────────────
 
 
-def _step1_state_dir(project_path: Path, state_dir: Path, fresh: bool) -> None:
+def _step1_state_dir(
+    project_path: Path,
+    state_dir: Path,
+    fresh: bool,
+    refresh_claude_md: bool = True,
+) -> None:
     """Create .archon/ state directory and populate with template files.
 
-    If fresh=False (re-init), preserve existing PROGRESS.md / task_*.md / USER_HINTS.md.
+    Args:
+      fresh: If False (re-init), preserve existing PROGRESS.md / task_*.md / USER_HINTS.md.
+      refresh_claude_md: If True, overwrite CLAUDE.md with the bundled template.
+        Set to False after a merge run so Claude's merged CLAUDE.md is preserved.
     """
     log.phase(1, "Setting up .archon/ state directory")
 
@@ -323,9 +307,19 @@ def _step1_state_dir(project_path: Path, state_dir: Path, fresh: bool) -> None:
             continue
         _copy_file(src, dst)
         copied += 1
-    # Overwrite "CLAUDE.md" on re-init, since it only contains the agent role description which may have changed.
-    log.warn("CLAUDE.md will be overwritten with the latest bundled version to ensure agent roles are up to date.")
-    _copy_file(template_dir / "CLAUDE.md", state_dir / "CLAUDE.md", overwrite=True)
+
+    claude_src = template_dir / "CLAUDE.md"
+    claude_dst = state_dir / "CLAUDE.md"
+    if refresh_claude_md:
+        if claude_dst.exists() and not fresh:
+            log.warn("CLAUDE.md will be overwritten with the latest bundled version "
+                     "to ensure agent roles are up to date.")
+        _copy_file(claude_src, claude_dst, overwrite=True)
+    else:
+        if not claude_dst.exists() and claude_src.exists():
+            _copy_file(claude_src, claude_dst)
+        log.step("Preserved merged CLAUDE.md (skipping overwrite)")
+
     log.step(f"Copied {copied} new template file(s), preserved {preserved} existing")
 
     _update_gitignore(project_path, ".archon/")
@@ -335,8 +329,11 @@ def _step1_state_dir(project_path: Path, state_dir: Path, fresh: bool) -> None:
 def _step2_copy_prompts(state_dir: Path, fresh: bool) -> None:
     """Copy prompt files into .archon/prompts/.
 
-    On re-init (fresh=False), do not silently overwrite local prompt edits —
-    the merge step (if chosen) already handled reconciliation.
+    Args:
+      fresh: If True (first init or 'overwrite' mode), replace existing prompts
+        with the bundled versions. If False (e.g. after a merge), preserve
+        existing local prompts — any reconciliation was already handled by
+        the merge step.
     """
     log.phase(2, "Copying prompts")
 
@@ -350,63 +347,66 @@ def _step2_copy_prompts(state_dir: Path, fresh: bool) -> None:
 
     new = 0
     preserved = 0
+    overwritten = 0
     for f in sorted(prompts_src.glob("*.md")):
         dst = prompts_dst / f.name
         if dst.exists():
-            # If it's a stale symlink from the old layout, replace it with a real file.
+            # If it's a stale symlink from the old layout, replace it with a real file
+            # regardless of fresh mode — broken symlinks must always be fixed.
             if dst.is_symlink():
                 dst.unlink()
                 _copy_file(f, dst, overwrite=True)
                 new += 1
+                continue
+            if fresh:
+                # Overwrite mode: replace existing prompts with the bundled version.
+                _copy_file(f, dst, overwrite=True)
+                overwritten += 1
             else:
+                # Re-init without overwrite: keep the user's local copy.
                 preserved += 1
             continue
         _copy_file(f, dst)
         new += 1
 
     if fresh:
-        log.success(f"Copied {new} prompt(s) to .archon/prompts/")
+        if overwritten:
+            log.success(f"Copied {new} new prompt(s), overwrote {overwritten} existing "
+                        "with bundled versions")
+        else:
+            log.success(f"Copied {new} prompt(s) to .archon/prompts/")
     else:
         log.success(f"Added {new} new prompt(s), preserved {preserved} existing")
     log.step("To customize: edit files directly in .archon/prompts/")
 
 
 def _step3_lean_lsp_mcp(project_path: Path, fresh: bool) -> None:
-    """Install lean-lsp MCP server at project scope.
-
-    If archon-lean-lsp is already registered with Claude Code, it will be
-    removed and re-registered to ensure the path points to the new installation.
-    This prevents broken paths if the user deletes the old Archon folder.
-    """
+    """Install lean-lsp MCP server at project scope."""
     log.phase(3, "Installing lean-lsp MCP server (project scope)")
 
     lean_lsp_dir = _data_path("tools/lean-lsp-mcp")
 
-    # First check what's already registered
     existing = _run(["claude", "mcp", "list"], cwd=project_path)
     already_registered = "archon-lean-lsp" in (existing.stdout or "")
 
-    # Remove existing registration to clear old paths before re-adding
     if already_registered:
         log.step("Found existing archon-lean-lsp. Removing old registration to update paths...")
         _run(["claude", "mcp", "remove", "archon-lean-lsp", "-s", "project"], cwd=project_path)
 
-    # Disable conflicting global plugins
     for name in _find_global_mcp_lean_lsp():
         log.warn(f"Found conflicting MCP server '{name}' in global config")
         log.step("Disabling for this project — Archon's version will be used instead")
         _run(["claude", "mcp", "remove", name, "-s", "project"], cwd=project_path)
         log.success(f"Disabled '{name}' for this project")
 
-    # Add the MCP server with the new, updated path
     r = _run(
         ["claude", "mcp", "add", "archon-lean-lsp", "-s", "project", "--",
          "uv", "run", "--directory", str(lean_lsp_dir), "lean-lsp-mcp"],
         cwd=project_path,
     )
-    
+
     output = r.stdout + r.stderr
-    
+
     if "already exists" in output.lower():
         log.success("archon-lean-lsp already configured")
     elif r.returncode == 0:
@@ -416,11 +416,7 @@ def _step3_lean_lsp_mcp(project_path: Path, fresh: bool) -> None:
 
 
 def _step4_skills(project_path: Path, fresh: bool) -> None:
-    """Install Archon skills via plugin marketplace.
-
-    On re-init, verify the marketplace path still points to the bundled location;
-    the previous install may point at a stale or deleted directory.
-    """
+    """Install Archon skills via plugin marketplace."""
     log.phase(4, "Installing Archon skills")
 
     home = Path.home()
@@ -494,7 +490,6 @@ def _step4_skills(project_path: Path, fresh: bool) -> None:
     agent_src = _data_path("tools/informal_agent.py")
     agent_dst = tools_dir / "archon-informal-agent.py"
     if agent_src.exists():
-        # Always refresh the tool — it's a pure code file with no user state
         _copy_file(agent_src, agent_dst, overwrite=True)
         log.success("Informal agent copied to .claude/tools/")
     else:
@@ -635,6 +630,10 @@ def init(
     # ── Re-init detection ────────────────────────────────────────
     info = _detect_existing_archon(state_dir)
     fresh = True
+    # Track whether the merge step has already reconciled CLAUDE.md so step1
+    # does not clobber the merged result.
+    merged_claude_md = False
+
     if info["exists"] and info["has_progress"]:
         if force:
             log.warn("--force passed: overwriting existing Archon setup")
@@ -648,7 +647,6 @@ def init(
 
         if mode == "keep":
             log.info("Keeping existing setup. Verifying MCP / plugin registration only.")
-            # Still refresh registrations (but don't touch files)
             _step3_lean_lsp_mcp(resolved, fresh=False)
             _step4_skills(resolved, fresh=False)
             _step5_disable_conflicting_plugins(resolved)
@@ -659,11 +657,17 @@ def init(
             staging = _stage_bundled_prompts(state_dir)
             _merge_prompts_with_claude(resolved, state_dir, staging)
             fresh = False
+            merged_claude_md = True  # Claude just handled CLAUDE.md; do not overwrite.
 
         if mode == "overwrite":
             fresh = True  # proceed through normal init, overwriting where applicable
 
-    _step1_state_dir(resolved, state_dir, fresh=fresh)
+    _step1_state_dir(
+        resolved,
+        state_dir,
+        fresh=fresh,
+        refresh_claude_md=not merged_claude_md,
+    )
     _step2_copy_prompts(state_dir, fresh=fresh)
     _step3_lean_lsp_mcp(resolved, fresh=fresh)
     _step4_skills(resolved, fresh=fresh)

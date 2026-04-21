@@ -83,4 +83,4 @@ Use [x] for stages that are truly complete or that you intentionally skip.
 
 ## After init
 
-When you advance the stage out of `init`, tell the user: "Init complete. Exit Claude Code with `/exit` or `Ctrl+D`. Then start the loop with `archon init <project_path>`."
+When you advance the stage out of `init`, tell the user: "Init complete. Exit Claude Code with `/exit` or `Ctrl+D`. Then start the loop with `archon loop <project_path>`."

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import atexit
 import json
 import os
 import shutil
@@ -77,11 +76,30 @@ def _find_free_port(start: int = 8080, attempts: int = 20) -> int | None:
     return None
 
 
-def _start_dashboard(project_path: Path, open_browser: bool) -> tuple[subprocess.Popen | None, int | None]:
+def _kill_dashboard(proc: subprocess.Popen | None) -> None:
+    """Terminate the dashboard process and its process group, best-effort."""
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except Exception:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+
+
+def _start_dashboard(
+    project_path: Path, open_browser: bool
+) -> tuple[subprocess.Popen | None, int | None]:
     """Start the dashboard UI as a background process.
 
-    Returns (process, port) or (None, None) on failure. Registers an atexit
-    hook so the process is cleaned up when `archon loop` exits.
+    Returns (process, port) or (None, None) on failure.
+
+    The dashboard is intentionally NOT registered with atexit — we want it to
+    keep running after the loop finishes so the user can review results. The
+    caller is responsible for installing signal handlers that clean it up on
+    Ctrl-C / SIGTERM, and for telling the user how to stop it.
     """
     if not shutil.which("node") or not shutil.which("npm"):
         log.warn("Dashboard skipped: Node.js / npm not found (run: archon setup)")
@@ -92,11 +110,8 @@ def _start_dashboard(project_path: Path, open_browser: bool) -> tuple[subprocess
         log.warn("Dashboard skipped: could not find a free port in 8080–8099")
         return None, None
 
-    # Delegate to `archon dashboard` so all the build/install logic lives in one place.
-    # --build-free path: dashboard command handles build if needed.
     cmd = ["archon", "dashboard", str(project_path), "--port", str(port)]
 
-    # Detach from terminal I/O so streaming prover logs stay clean
     try:
         proc = subprocess.Popen(
             cmd,
@@ -120,7 +135,8 @@ def _start_dashboard(project_path: Path, open_browser: bool) -> tuple[subprocess
     url = f"http://localhost:{port}"
     log.panel(
         f"Dashboard is live at [bold cyan]{url}[/bold cyan]\n"
-        f"Watch iterations, parallel provers, diffs, and the proof journal update live.",
+        f"Watch iterations, parallel provers, diffs, and the proof journal update live.\n"
+        f"It will keep running after the loop finishes so you can review results.",
         title="Archon Dashboard",
         style="cyan",
     )
@@ -130,17 +146,6 @@ def _start_dashboard(project_path: Path, open_browser: bool) -> tuple[subprocess
             webbrowser.open(url)
         except Exception:
             pass
-
-    def _cleanup():
-        if proc.poll() is None:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            except Exception:
-                try:
-                    proc.terminate()
-                except Exception:
-                    pass
-    atexit.register(_cleanup)
 
     return proc, port
 
@@ -236,7 +241,7 @@ def _emit_parallel_round_end(iter_dir: Path, prover_count: int, failed: int) -> 
         f.write(json.dumps(row) + "\n")
 
 
-# ── parallel provers (unchanged from previous version) ────────────────
+# ── parallel provers ──────────────────────────────────────────────────
 
 
 def _run_single_prover(
@@ -382,7 +387,7 @@ def _run_parallel_provers(
     _emit_parallel_round_end(iter_dir, file_count, failed)
 
 
-# ── review phase (unchanged) ──────────────────────────────────────────
+# ── review phase ──────────────────────────────────────────────────────
 
 
 def _run_review_phase(
@@ -477,7 +482,9 @@ def loop(
     """Start the automated plan → prove → review loop.
 
     By default, the web dashboard is launched in the background so you can
-    watch iterations live. Pass --no-dashboard to disable this.
+    watch iterations live. It keeps running after the loop finishes so you
+    can review results; stop it with Ctrl-C or `archon dashboard stop`.
+    Pass --no-dashboard to disable auto-launch.
     """
     resolved = Path(project_path).resolve()
     project_name = resolved.name
@@ -524,158 +531,190 @@ def loop(
         if dashboard_port:
             dashboard_url = f"http://localhost:{dashboard_port}"
 
-    if is_complete(progress_file, force_stage):
-        log.success(f"Project '{project_name}' is COMPLETE. Nothing to do.")
-        if dashboard_url:
-            log.step(f"Review results in the dashboard: {dashboard_url}")
-        return
+    # Install signal handlers so Ctrl-C / SIGTERM tears down the dashboard,
+    # but a normal exit leaves it running (matching the final panel's promise).
+    def _on_interrupt(signum, frame):
+        log.warn(f"Received signal {signum} — stopping dashboard and exiting.")
+        _kill_dashboard(dashboard_proc)
+        # Re-raise the default handler so the process actually exits.
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
 
-    loop_start = time.monotonic()
+    previous_handlers: dict[int, object] = {}
+    if dashboard_proc is not None:
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                previous_handlers[sig] = signal.signal(sig, _on_interrupt)
+            except (ValueError, OSError):
+                # Not in the main thread, or platform doesn't support it — skip.
+                pass
 
-    for i in range(max_iterations):
-        current_stage = read_stage(progress_file, force_stage)
-
+    try:
         if is_complete(progress_file, force_stage):
-            log.success("PROGRESS.md says COMPLETE. Exiting loop.")
-            break
-
-        log.iteration(i + 1, max_iterations, current_stage, project_name)
-        if dashboard_url:
-            log.step(f"Live view: {dashboard_url}")
-
-        iter_start = time.monotonic()
-
-        iter_dir: Path | None = None
-        iter_meta: Path | None = None
-        if not dry_run:
-            iter_num = next_iter_num(log_dir)
-            iter_dir = log_dir / f"iter-{iter_num:03d}"
-            iter_meta = iter_dir / "meta.json"
-            iter_dir.mkdir(parents=True, exist_ok=True)
-            if parallel:
-                (iter_dir / "provers").mkdir(exist_ok=True)
-            write_meta(
-                iter_meta,
-                iteration=iter_num,
-                stage=current_stage,
-                mode="parallel" if parallel else "serial",
-                startedAt=utcnow_iso(),
-            )
-            write_meta(iter_meta, **{"plan.status": "running"})
-            log.info(f"Log dir: {iter_dir}")
-
-        # ── Phase 1: Plan ──
-        log.phase(1, "Plan agent")
-
-        plan_start = time.monotonic()
-        plan_prompt = build_plan_prompt(project_name, resolved, state_dir, current_stage)
-
-        if dry_run:
-            log.step("[dry-run] Plan prompt:")
-            print(plan_prompt)
-        else:
-            plan_log = iter_dir / "plan"
-            run_claude(plan_prompt, cwd=resolved, log_base=plan_log, verbose_logs=verbose_logs)
-
-        plan_secs = int(time.monotonic() - plan_start)
-        log.info(f"Plan phase finished. ({plan_secs}s)")
-        if not dry_run:
-            write_meta(iter_meta, **{"plan.status": "done", "plan.durationSecs": plan_secs})
-
-        if is_complete(progress_file, force_stage):
-            log.success("PROGRESS.md says COMPLETE. Exiting loop.")
-            break
-
-        current_stage = read_stage(progress_file, force_stage)
-
-        # ── Phase 2: Prover ──
-        log.phase(2, f"Prover agent(s) — {'parallel' if parallel else 'serial'}")
-
-        prover_start = time.monotonic()
-        if not dry_run:
-            write_meta(iter_meta, **{"prover.status": "running"})
-
-        if parallel:
-            _run_parallel_provers(
-                project_name, resolved, state_dir, current_stage,
-                iter_dir, iter_meta, max_parallel, verbose_logs, dry_run,
-                dashboard_url=dashboard_url,
-            )
-        else:
-            prover_prompt = build_prover_prompt(project_name, resolved, state_dir, current_stage)
-            if dry_run:
-                log.step("[dry-run] Prover prompt:")
-                print(prover_prompt)
-            else:
-                prover_log = iter_dir / "prover"
-                sorry_files = parse_objective_files(progress_file, resolved)
-                if sorry_files:
-                    for sf in sorry_files:
-                        srel = _relpath(sf, resolved)
-                        sslug = _file_slug(srel)
-                        ssnap = iter_dir / "snapshots" / sslug
-                        _snapshot_baseline(sf, ssnap)
-
-                old_env = _set_prover_env(
-                    snap_dir=iter_dir / "snapshots",
-                    prover_jsonl=Path(str(prover_log) + ".jsonl"),
-                    project_path=resolved,
-                    serial_mode=True,
-                )
-                try:
-                    run_claude(prover_prompt, cwd=resolved, log_base=prover_log, verbose_logs=verbose_logs)
-                finally:
-                    _unset_prover_env(old_env)
-
-        prover_secs = int(time.monotonic() - prover_start)
-        log.info(f"Prover phase finished. ({prover_secs}s)")
-        if dashboard_url:
-            log.step(f"Inspect diffs: {dashboard_url}/diffs")
-        if not dry_run:
-            write_meta(iter_meta, **{"prover.status": "done", "prover.durationSecs": prover_secs})
-
-        # ── Phase 3: Review ──
-        if not no_review and not dry_run:
-            log.phase(3, "Review agent")
-
-            review_start = time.monotonic()
-            write_meta(iter_meta, **{"review.status": "running"})
-
-            _run_review_phase(
-                project_name, resolved, state_dir, current_stage,
-                iter_dir, verbose_logs,
-            )
-
-            review_secs = int(time.monotonic() - review_start)
-            log.info(f"Review phase finished. ({review_secs}s)")
+            log.success(f"Project '{project_name}' is COMPLETE. Nothing to do.")
             if dashboard_url:
-                log.step(f"Journal:       {dashboard_url}/journal")
-            write_meta(iter_meta, **{"review.status": "done", "review.durationSecs": review_secs})
+                log.step(f"Review results in the dashboard: {dashboard_url}")
+                log.step("Stop the dashboard with Ctrl-C or: archon dashboard stop")
+            return
 
-        iter_secs = int(time.monotonic() - iter_start)
-        log.info(f"Iteration {i + 1} complete. Wall time: {iter_secs}s")
-        if not dry_run:
-            write_meta(iter_meta, completedAt=utcnow_iso(), wallTimeSecs=iter_secs)
-            data = cost_summary(iter_dir)
-            if data:
-                log.cost_table(
-                    f"Iteration {i + 1}",
-                    data.totals_dict(),
-                    data.model_rows() or None,
+        loop_start = time.monotonic()
+
+        for i in range(max_iterations):
+            current_stage = read_stage(progress_file, force_stage)
+
+            if is_complete(progress_file, force_stage):
+                log.success("PROGRESS.md says COMPLETE. Exiting loop.")
+                break
+
+            log.iteration(i + 1, max_iterations, current_stage, project_name)
+            if dashboard_url:
+                log.step(f"Live view: {dashboard_url}")
+
+            iter_start = time.monotonic()
+
+            iter_dir: Path | None = None
+            iter_meta: Path | None = None
+            if not dry_run:
+                iter_num = next_iter_num(log_dir)
+                iter_dir = log_dir / f"iter-{iter_num:03d}"
+                iter_meta = iter_dir / "meta.json"
+                iter_dir.mkdir(parents=True, exist_ok=True)
+                if parallel:
+                    (iter_dir / "provers").mkdir(exist_ok=True)
+                write_meta(
+                    iter_meta,
+                    iteration=iter_num,
+                    stage=current_stage,
+                    mode="parallel" if parallel else "serial",
+                    startedAt=utcnow_iso(),
+                )
+                write_meta(iter_meta, **{"plan.status": "running"})
+                log.info(f"Log dir: {iter_dir}")
+
+            # ── Phase 1: Plan ──
+            log.phase(1, "Plan agent")
+
+            plan_start = time.monotonic()
+            plan_prompt = build_plan_prompt(project_name, resolved, state_dir, current_stage)
+
+            if dry_run:
+                log.step("[dry-run] Plan prompt:")
+                print(plan_prompt)
+            else:
+                plan_log = iter_dir / "plan"
+                run_claude(plan_prompt, cwd=resolved, log_base=plan_log, verbose_logs=verbose_logs)
+
+            plan_secs = int(time.monotonic() - plan_start)
+            log.info(f"Plan phase finished. ({plan_secs}s)")
+            if not dry_run:
+                write_meta(iter_meta, **{"plan.status": "done", "plan.durationSecs": plan_secs})
+
+            if is_complete(progress_file, force_stage):
+                log.success("PROGRESS.md says COMPLETE. Exiting loop.")
+                break
+
+            current_stage = read_stage(progress_file, force_stage)
+
+            # ── Phase 2: Prover ──
+            log.phase(2, f"Prover agent(s) — {'parallel' if parallel else 'serial'}")
+
+            prover_start = time.monotonic()
+            if not dry_run:
+                write_meta(iter_meta, **{"prover.status": "running"})
+
+            if parallel:
+                _run_parallel_provers(
+                    project_name, resolved, state_dir, current_stage,
+                    iter_dir, iter_meta, max_parallel, verbose_logs, dry_run,
+                    dashboard_url=dashboard_url,
+                )
+            else:
+                prover_prompt = build_prover_prompt(project_name, resolved, state_dir, current_stage)
+                if dry_run:
+                    log.step("[dry-run] Prover prompt:")
+                    print(prover_prompt)
+                else:
+                    prover_log = iter_dir / "prover"
+                    sorry_files = parse_objective_files(progress_file, resolved)
+                    if sorry_files:
+                        for sf in sorry_files:
+                            srel = _relpath(sf, resolved)
+                            sslug = _file_slug(srel)
+                            ssnap = iter_dir / "snapshots" / sslug
+                            _snapshot_baseline(sf, ssnap)
+
+                    old_env = _set_prover_env(
+                        snap_dir=iter_dir / "snapshots",
+                        prover_jsonl=Path(str(prover_log) + ".jsonl"),
+                        project_path=resolved,
+                        serial_mode=True,
+                    )
+                    try:
+                        run_claude(prover_prompt, cwd=resolved, log_base=prover_log, verbose_logs=verbose_logs)
+                    finally:
+                        _unset_prover_env(old_env)
+
+            prover_secs = int(time.monotonic() - prover_start)
+            log.info(f"Prover phase finished. ({prover_secs}s)")
+            if dashboard_url:
+                log.step(f"Inspect diffs: {dashboard_url}/diffs")
+            if not dry_run:
+                write_meta(iter_meta, **{"prover.status": "done", "prover.durationSecs": prover_secs})
+
+            # ── Phase 3: Review ──
+            if not no_review and not dry_run:
+                log.phase(3, "Review agent")
+
+                review_start = time.monotonic()
+                write_meta(iter_meta, **{"review.status": "running"})
+
+                _run_review_phase(
+                    project_name, resolved, state_dir, current_stage,
+                    iter_dir, verbose_logs,
                 )
 
-    loop_secs = int(time.monotonic() - loop_start)
-    if not is_complete(progress_file, force_stage):
-        log.warn(f"Reached max iterations ({max_iterations}). Stopping.")
-    log.info(f"Total wall time: {loop_secs}s")
-    data = cost_summary(log_dir)
-    if data:
-        log.cost_table("Loop totals", data.totals_dict(), data.model_rows() or None)
+                review_secs = int(time.monotonic() - review_start)
+                log.info(f"Review phase finished. ({review_secs}s)")
+                if dashboard_url:
+                    log.step(f"Journal:       {dashboard_url}/journal")
+                write_meta(iter_meta, **{"review.status": "done", "review.durationSecs": review_secs})
 
-    if dashboard_url:
-        log.panel(
-            f"Loop finished. The dashboard is still running at [bold cyan]{dashboard_url}[/bold cyan].\n"
-            f"Inspect results, then stop it with Ctrl-C or by closing this terminal.",
-            title="Done",
-            style="green",
-        )
+            iter_secs = int(time.monotonic() - iter_start)
+            log.info(f"Iteration {i + 1} complete. Wall time: {iter_secs}s")
+            if not dry_run:
+                write_meta(iter_meta, completedAt=utcnow_iso(), wallTimeSecs=iter_secs)
+                data = cost_summary(iter_dir)
+                if data:
+                    log.cost_table(
+                        f"Iteration {i + 1}",
+                        data.totals_dict(),
+                        data.model_rows() or None,
+                    )
+
+        loop_secs = int(time.monotonic() - loop_start)
+        if not is_complete(progress_file, force_stage):
+            log.warn(f"Reached max iterations ({max_iterations}). Stopping.")
+        log.info(f"Total wall time: {loop_secs}s")
+        data = cost_summary(log_dir)
+        if data:
+            log.cost_table("Loop totals", data.totals_dict(), data.model_rows() or None)
+
+        if dashboard_url:
+            log.panel(
+                f"Loop finished. The dashboard is still running at "
+                f"[bold cyan]{dashboard_url}[/bold cyan].\n"
+                f"Inspect results at your own pace. When you're done, stop it with:\n"
+                f"  • Ctrl-C in this terminal, or\n"
+                f"  • [cyan]archon dashboard stop[/cyan] from another terminal.",
+                title="Done",
+                style="green",
+            )
+    finally:
+        # Restore any signal handlers we installed so we don't leak them into
+        # the interpreter's global state (matters if `loop` is called from a
+        # larger Python program).
+        for sig, handler in previous_handlers.items():
+            try:
+                signal.signal(sig, handler)  # type: ignore[arg-type]
+            except (ValueError, OSError, TypeError):
+                pass
