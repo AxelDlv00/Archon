@@ -1,8 +1,17 @@
 # Archon
 
+![Version](https://img.shields.io/badge/version-0.1.0-blue)
+[![License](https://img.shields.io/badge/Apache-2.0-green)](./LICENSE)
+
+> **Archon v0.1.0.** This version introduces a unified `archon` CLI, a one-line installer, an auto-launching web dashboard, and an interactive proof graph.
+> 
+> **Upgrading from a pre-CLI checkout?** See [MIGRATION.md](docs/MIGRATION.md) — it walks through installing the new CLI and reconciling an already-initialized project without losing your local edits.
+> 
+> Full release notes: [CHANGELOG.md](docs/CHANGELOG.md).
+
 Archon is an agentic system that autonomously formalizes research-level mathematics in Lean 4. A **plan agent** provides strategic guidance while **prover agents** write and verify proofs — separating analysis from execution to avoid context explosion. The system handles repository-scale formalization through three phases: scaffolding, proving, and polish. Built on Claude Code and Claude Opus 4.6, with a modified fork of [lean-lsp-mcp](https://github.com/oOo0oOo/lean-lsp-mcp) and [lean4-skills](https://github.com/cameronfreer/lean4-skills). Archon originated from orchestrating Claude Code with OpenClaw — see [Standard vs. orchestrator-scheduled mode](#standard-vs-orchestrator-scheduled-mode). See also our [blog](https://frenzymath.com/blog/archon-firstproof/) and [announcement](https://frenzymath.com/news/archon-firstproof/).
 
-Archon is designed and optimized for **project-level formalization** — multi-file repositories with interdependent theorems, not isolated competition problems. As such, single-problem benchmarks are not a specific optimization target. For model choice, **Opus 4.6 is strongly recommended**; Sonnet also works well but is less capable. Other models have not been tested — weaker models may struggle with the complex skills and prompt structures, in which case Archon's system design could hurt performance rather than help it.                                                          
+Archon is designed and optimized for **project-level formalization** — multi-file repositories with interdependent theorems, not isolated competition problems. As such, single-problem benchmarks are not a specific optimization target. For model choice, **Opus 4.6 is strongly recommended**; Sonnet also works well but is less capable. Other models have not been tested — weaker models may struggle with the complex skills and prompt structures, in which case Archon's system design could hurt performance rather than help it.
 
 **Security note:** `archon loop` runs Claude Code with `--dangerously-skip-permissions --permission-mode bypassPermissions`, meaning the model can execute arbitrary shell commands, read/write any file the process can access, and make network requests — all without asking for confirmation. This is necessary for unattended operation but carries real risk: a misbehaving model could delete files, overwrite code, or run unintended commands. **While Opus 4.6 NEVER caused harm across all of our experiments,** the following measures can further reduce exposure:
 
@@ -12,53 +21,104 @@ Archon is designed and optimized for **project-level formalization** — multi-f
 - Avoid running as root or with access to production systems
 - Review `.archon/proof-journal/` after each run to audit what the agents did
 
-## Setup
+## Table of Contents
 
-**Note:** `archon loop` runs Claude Code with `--dangerously-skip-permissions`, which Claude Code refuses when running as root on Linux. Two workarounds:
-1. **Use a non-root account** (RECOMMENDED) (e.g. create one with `adduser`) so you are not running with excessive root privileges.
-2. **Set `export IS_SANDBOX=1`** so Claude Code is allowed to start with this high-risk option.
+- [Install](#install)
+- [Usage](#usage)
+  - [1. Initialize a project](#1-initialize-a-project)
+  - [2. Start the automated loop](#2-start-the-automated-loop)
+  - [Guiding agents](#guiding-agents)
+  - [Monitoring progress](#monitoring-progress)
+  - [Starting the dashboard manually](#starting-the-dashboard-manually)
+  - [Existing lean4-skills and lean-lsp MCP installations](#existing-lean4-skills-and-lean-lsp-mcp-installations)
+  - [CLI options for `archon loop`](#cli-options-for-archon-loop)
+- [Supplying informal material](#supplying-informal-material)
+- [Standard vs. orchestrator-scheduled mode](#standard-vs-orchestrator-scheduled-mode)
+  - [How to use orchestrator-scheduled mode](#how-to-use-orchestrator-scheduled-mode)
+  - [What changes compared to the standard loop](#what-changes-compared-to-the-standard-loop)
+  - [Why orchestrator-scheduled mode is more effective](#why-orchestrator-scheduled-mode-is-more-effective)
 
-To install the CLI tools and system dependencies, run the following command in your terminal:
+## Install
 
+> **Note:** `archon loop` runs Claude Code with `--dangerously-skip-permissions`, which Claude Code refuses when running as root on Linux. Two workarounds:
+> 1. **Use a non-root account** (RECOMMENDED) — e.g. create one with `adduser` — so you are not running with excessive root privileges.
+> 2. **Set `export IS_SANDBOX=1`** so Claude Code is allowed to start with this high-risk option.
+
+To install the CLI tools and system dependencies, run the following command in your terminal (it is recommended, but not required, to run inside a Python virtual environment):
 ```bash
 curl -sSL https://raw.githubusercontent.com/frenzymath/Archon/refs/heads/main/install.sh | bash
 ```
 
-*Run `archon --help` for details.*
+This fetches the repository, runs `pip install .`, and executes `archon setup` to install system-level dependencies (uv, Claude Code) and verify your Lean toolchain. *The installation process might be slow the first time.*
 
-> **Note**: A good practice is to run this in a Python environment. You need `python3` and `pip` installed on your system.
+You should now be able to verify the installation and be guided on its usage with:
 
-`archon setup` installs system-level dependencies (uv, tmux, Claude Code) and verifies your Lean toolchain. It also checks for API keys needed by the informal agent (`OPENAI_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY`) — at least one is recommended but not required.
+```bash
+archon -h
+```
 
-Note: the bundled informal agent is a simplified demonstration — it makes a single API call to an external model for proof sketches. Our internal implementation is more involved but not yet ready for open-sourcing. In practice, the one-shot approach does not show an obvious performance drop, likely because Claude Code performs its own verification and refinement on the returned sketches.
+To update an existing install later:
+
+```bash
+archon update
+```
+
+`archon setup` also checks for API keys used by the informal agent
+(`OPENAI_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY`) — at least one is recommended but not required.
+
+> The bundled informal agent is a simplified demonstration: a single API call
+> to an external model for proof sketches. Our internal implementation is more
+> involved but not yet ready for open-sourcing. In practice the one-shot
+> approach does not show an obvious performance drop, likely because Claude
+> Code performs its own verification and refinement on the returned sketches.
+
+### CLI overview
+
+| Command | Description |
+|---------|-------------|
+| `archon init` | Initialize a new Archon project (or reconcile an existing one). |
+| `archon loop` | Run the automated plan → prove → review loop. |
+| `archon dashboard` | Start the web monitoring interface (auto-launched by `loop` by default). |
+| `archon doctor` | Verify the full Archon setup and health. |
+| `archon prove` | Directly prove an inline statement. |
+| `archon setup` | Install required system dependencies. |
+| `archon update` | Update Archon to the latest published version. |
+
+Run `archon --help` or `archon <command> --help` for details.
 
 ## Usage
 
 ### 1. Initialize a project
 
-The project path must point to the directory containing your `lakefile.lean` or `lakefile.toml` — this is what defines a Lean project.
+The project path must point to the directory containing your `lakefile.lean` or `lakefile.toml` — this is what defines a Lean project. Otherwise, it can contain informal content (papers, blueprints, notes) that Archon will use to initialize the project structure and write the first objectives.
 
-**Option A — Initialize an existing project**:
+To initialize:
+
 ```bash
 archon init /path/to/your-lean-project
 ```
 
-**Option B — Create a new project in Archon's workspace**:
-```bash
-archon init workspace/my-project
-```
-
 If no path is given, `init` prompts you for a project name and creates it.
 
-`init` does the following inside your project:
-- Creates `.archon/` with runtime state files and symlinked prompts
-- Installs Archon's lean4 skills as the `lean4@archon-local` plugin (live-linked to Archon source)
-- Symlinks the informal agent into `.claude/tools/archon-informal-agent.py`
+`archon init` does the following inside your project:
+- Creates `.archon/` with runtime state files and a **copy** of Archon's prompts
+  (previous versions symlinked — see [MIGRATION.md](docs/MIGRATION.md))
+- Installs Archon's lean4 skills as the `lean4@archon-local` plugin at project scope
+- Copies the informal agent into `.claude/tools/archon-informal-agent.py`
 - Installs Archon's lean-lsp MCP server as `archon-lean-lsp` at project scope
-- Detects and disables any conflicting global lean4-skills and lean-lsp MCP (see [Existing lean4-skills and lean-lsp MCP installations](#existing-lean4-skills-and-lean-lsp-mcp-installations))
-- Launches Claude Code interactively to detect project state, set up lakefile/Mathlib if needed, and write initial objectives
+- Detects and disables any conflicting global `lean4-skills` / `lean-lsp` MCP
+  (see [Existing lean4-skills and lean-lsp MCP installations](#existing-lean4-skills-and-lean-lsp-mcp-installations))
+- Launches Claude Code interactively to detect project state, set up
+  lakefile/Mathlib if needed, and write initial objectives
 
-Init automatically runs `/archon-lean4:doctor` at the end to verify the full setup (Lean environment, MCP, skills, state files).
+If the project has already been initialized, it might use a different version of Archon or you might have modified the prompts/skills manually, `init` offers four choices:
+
+- **keep** — leave your existing setup alone; refresh MCP/plugin registrations only
+- **merge** (recommended) — launch Claude Code in a focused diff session and reconcile each prompt / `CLAUDE.md` file interactively
+- **overwrite** — replace all Archon files with the bundled versions (discards local edits)
+- **abort** — cancel without changes
+
+Init automatically runs `/archon-lean4:doctor` at the end to verify the full setup (Lean environment, MCP, skills, state files). See [MIGRATION.md](docs/MIGRATION.md) for details on upgrading an older project.
 
 ### 2. Start the automated loop
 
@@ -74,7 +134,9 @@ The loop alternates plan and prover agents through stages:
 | `prover` | Proving — fill `sorry` placeholders with verified proofs |
 | `polish` | Verification and polish — golf, refactor, extract reusable lemmas |
 
-**NOTE:** The prover agent is instructed to push formalization as far as possible, so the first few runs typically take **several hours** as it clears all low-hanging fruits. Once only genuinely difficult sorrys remain, each iteration becomes much shorter. To confirm the agent is running, check the latest log in `.archon/logs/archon-<timestamp>.jsonl` in your project directory; the agent also writes Lean files when running, which you can see directly.
+By default, `archon loop` **also launches the web dashboard** (see [Web Dashboard](#monitoring-progress)) in the background on a free port in the range 8080–8099 and prints the URL. The dashboard keeps running after the loop finishes so you can review results; stop it with Ctrl-C or by closing the terminal. Disable it with `--no-dashboard`, or open a browser automatically with `--open`.
+
+**NOTE:** The prover agent is instructed to push formalization as far as possible, so the first few runs typically take **several hours** as it clears all low-hanging fruits. Once only genuinely difficult sorrys remain, each iteration becomes much shorter. To confirm the agent is running, watch the dashboard or tail `.archon/logs/iter-*/provers/*.jsonl`; the agent also writes Lean files while running, which you can see directly.
 
 The loop exits automatically when the stage reaches `COMPLETE`. You can run `archon loop` on multiple projects in parallel from separate terminals — each project's state is independent.
 
@@ -100,49 +162,33 @@ Archon has two layers — local overrides global:
 
 | Layer | Location | Scope |
 |-------|----------|-------|
-| **Global** | `Archon/.archon-src/prompts/*.md` | All projects |
+| **Global** | Bundled inside the installed `archon` package | All projects (template source) |
 | **Local** | `<project>/.archon/prompts/*.md` | One project only |
 
-By default, local prompts are symlinks to the global ones — so edits to the global prompt are picked up automatically by every project on the next iteration. To override a prompt for one project, replace the symlink with a copy and edit it. Note that once you do this, future updates to the global prompt will no longer propagate to that project — you are responsible for keeping the local copy up to date.
+Starting with v0.1.0, local prompts are **copies** of the bundled templates rather than symlinks. This means:
+
+- You can edit `<project>/.archon/prompts/*.md` freely without affecting other projects.
+- Template updates do **not** automatically propagate. To pull in newer versions of the bundled prompts, run `archon init` again in that project and choose **merge** (recommended) or **overwrite**.
+
+If you're coming from a version that used symlinks, see [MIGRATION.md](docs/MIGRATION.md) for the one-time migration flow.
 
 ### Customizing skills
 
-Archon ships with a modified fork of [lean4-skills](https://github.com/cameronfreer/lean4-skills), installed as `archon-lean4` (providing `/archon-lean4:prove`, `/archon-lean4:doctor`, etc.). Skills follow a global-vs-local layering:
+Archon ships with a modified fork of [lean4-skills](https://github.com/cameronfreer/lean4-skills), installed as `lean4@archon-local` (providing `/archon-lean4:prove`, `/archon-lean4:doctor`, etc.). Skills are sourced from the installed `archon` package and registered with Claude Code as a local plugin marketplace.
 
-| Layer | Location | What it provides |
-|-------|----------|-----------------|
-| **Global** | `Archon/.archon-src/skills/*/` | Installed as a plugin; cache symlinked to Archon source |
-| **Local** | `<project>/.claude/skills/<name>/` | Project-specific skills you create |
+**Modifying global skills**: Edit files under the installed package's
+`skills/lean4/` directory. `archon init` re-registers the marketplace at the correct path on each run, so your edits take effect after re-init.
 
-**Modifying global skills**: You can edit files directly under `Archon/.archon-src/skills/lean4/`. The plugin cache is a symlink back to this directory, so changes take effect on the next Claude Code session in any project. Be aware that this affects all projects.
-
-**Adding new global skills**: Create a new directory under `Archon/.archon-src/skills/<your-skill-name>/` with a `SKILL.md` or `.claude-plugin/plugin.json` inside, and add it to `.archon-src/skills/.claude-plugin/marketplace.json`. Run `archon init` again on your project to pick up the new skill.
+**Adding new global skills**: Create a new directory under the bundled
+`skills/<your-skill-name>/` with a `SKILL.md` or `.claude-plugin/plugin.json` inside, and add it to `skills/.claude-plugin/marketplace.json`. Run `archon init` again on your project to pick up the new skill.
 
 **We encourage you to customize.** If you notice the prover repeatedly making the same mistakes, or a proof strategy that consistently works for your project, codify it — add a skill or adjust a prompt. Archon improves as its skills and prompts accumulate lessons from your specific formalization work.
-
-**Modifying local (project-only) skills**: To customize a global skill for one project without affecting others, replace the cache symlink with a real copy (`cp -rL` the symlink target). As with prompts, once you do this, future updates to the global skill will no longer propagate to that project.
 
 **Adding local skills**: Place them in `<project>/.claude/skills/<your-skill-name>/SKILL.md`. They are discovered by Claude Code automatically and won't conflict with Archon's `/archon-lean4:*` commands. No re-init needed.
 
 ### Monitoring progress
 
-To check how the formalization is going, look at these files in your project:
-
-- **`.archon/logs/archon-<timestamp>.jsonl`** — running log of agent activity. Check the latest timestamp to monitor whether agents are still working.
-- **`.archon/PROJECT_STATUS.md`** — overall progress: total sorries, what's solved, what's blocked, and reusable proof patterns. This is the best starting point.
-- **`.archon/proof-journal/sessions/session_N/summary.md`** — detailed record of a specific iteration: what was attempted, what succeeded, what failed, and why.
-
-These are updated automatically by the review agent after each iteration. If the loop has finished with `--no-review` and you want to generate a review manually, run `./review.sh /path/to/your-project`.
-
-### Dashboard
-
-Archon includes a web dashboard for real-time monitoring. Start it alongside `archon loop`:
-
-```bash
-archon dashboard /path/to/your-lean-project
-```
-
-The dashboard shows iteration progress, parallel prover status, a file-centric Diffs view backed by recorded code snapshots, agent logs with live streaming, and proof journal milestones — all updating in real time.
+To check how the formalization is going, the easiest starting point is the **dashboard** (auto-launched by `archon loop` — visit the URL printed in the terminal, e.g. `http://localhost:8080`). It shows iteration progress, parallel prover status, a file-centric Diffs view backed by recorded code snapshots, agent logs with live streaming, and proof journal milestones.
 
 <p align="center">
 <img src="docs/dashboard-logs.jpg" alt="Archon Dashboard — Logs view" width="800">
@@ -156,11 +202,31 @@ The **Journal** view tracks proof milestones across sessions — see which theor
 <img src="docs/dashboard-journal.jpg" alt="Archon Dashboard — Journal view" width="800">
 </p>
 
-See [`ui/README.md`](ui/README.md) for more details on Overview / Diffs / Logs / Journal and the supporting API surface.
+A new **Graph** view (v0.1.0) renders the proof dependency graph
+interactively, so you can see which theorems block which and how the
+formalization is structured.
+
+See [`src/archon/ui/README.md`](src/archon/ui/README.md) for more details on Overview / Diffs / Logs / Journal / Graph and the supporting API surface.
+
+You can also inspect state files directly:
+
+- **`.archon/logs/iter-<N>/**/*.jsonl`** — running log of agent activity. The latest iteration's files tell you whether agents are still working.
+- **`.archon/PROJECT_STATUS.md`** — overall progress: total sorries, what's solved, what's blocked, and reusable proof patterns.
+- **`.archon/proof-journal/sessions/session_N/summary.md`** — detailed record of a specific iteration: what was attempted, what succeeded, what failed, and why.
+
+These are updated automatically by the review agent after each iteration.
+
+### Starting the dashboard manually
+
+If you disabled the auto-launched dashboard, or want to look at a project after the loop has finished and the terminal is gone:
+
+```bash
+archon dashboard /path/to/your-lean-project
+```
 
 ### Existing lean4-skills and lean-lsp MCP installations
 
-If you already have `lean4-skills` or `lean-lsp` MCP installed globally, `init.sh` detects them and disables them **for this project only** — so only Archon's modified versions are active. Your global installations are untouched and continue working in all other projects.
+If you already have `lean4-skills` or `lean-lsp` MCP installed globally, `archon init` detects them and disables them **for this project only** — so only Archon's modified versions are active. Your global installations are untouched and continue working in all other projects.
 
 To restore the originals in an Archon project:
 ```bash
@@ -169,15 +235,18 @@ claude plugin enable lean4-skills --scope project     # re-enable standard skill
 claude mcp add lean-lsp -s project -- uvx lean-lsp-mcp  # re-enable standard MCP
 ```
 
-### CLI options
+### CLI options for `archon loop`
 
 | Flag | Description |
 |------|-------------|
-| `--max-iterations N` | Max plan→prover→review cycles (default: 10). Exits early if stage reaches `COMPLETE`. |
-| `--stage STAGE` | Force a stage (`autoformalize`, `prover`, `polish`) instead of reading from PROGRESS.md. |
+| `--max-iterations N` / `-m N` | Max plan→prover→review cycles (default: 10). Exits early if stage reaches `COMPLETE`. |
+| `--max-parallel N` | Max concurrent provers in parallel mode (default: 8). |
+| `--stage STAGE` / `-s STAGE` | Force a stage (`autoformalize`, `prover`, `polish`) instead of reading from PROGRESS.md. |
 | `--serial` | One prover at a time instead of parallel (one per file). |
 | `--verbose-logs` | Save raw Claude stream events to `.raw.jsonl` for debugging. |
 | `--no-review` | Skip review phase. Saves time/cost; plan agent still works without it. |
+| `--no-dashboard` | Do not auto-start the web dashboard. |
+| `--open` | Open the dashboard in a browser as soon as it starts. |
 | `--dry-run` | Print prompts without launching Claude. |
 
 ## Supplying informal material
@@ -200,11 +269,11 @@ In our experiments, replacing the fixed loop with an **orchestrator-scheduled mo
 
 Ensure your orchestrator has access to the project directory, and ask it to read README.md for an overview of the project.
 
-We provide [`ORCHESTRATOR_GUIDE.md`](ORCHESTRATOR_GUIDE.md) as a companion guide for your orchestrator. It was authored by our own OpenClaw based on its accumulated experience orchestrating Claude Code across multiple formalization projects. The guide covers how to read Archon's state files, decide which stage to run next, compose prompts from `.archon/prompts/`, and invoke `claude -p` — including prompt composition, adaptive scheduling logic, failure recovery, and operational rules learned from production use.
+We provide [`ORCHESTRATOR_GUIDE.md`](src/archon/ORCHESTRATOR_GUIDE.md) as a companion guide for your orchestrator. It was authored by our own OpenClaw based on its accumulated experience orchestrating Claude Code across multiple formalization projects. The guide covers how to read Archon's state files, decide which stage to run next, compose prompts from `.archon/prompts/`, and invoke `claude -p` — including prompt composition, adaptive scheduling logic, failure recovery, and operational rules learned from production use.
 
 ### What changes compared to the standard loop
 
-In standard mode, `archon-loop.sh` enforces a fixed cycle: plan→prover→review, repeated up to `--max-iterations`. The orchestrator-scheduled mode differs in several ways:
+In standard mode, `archon loop` enforces a fixed cycle: plan→prover→review, repeated up to `--max-iterations`. The orchestrator-scheduled mode differs in several ways:
 
 - **Environment management** — the orchestrator handles setup and debugging: installing dependencies, resolving Mathlib cache issues, verifying that skills and MCP work correctly. These tasks often require back-and-forth troubleshooting that a fixed script cannot do.
 - **Flexible phase ordering** — the orchestrator decides when to plan, prove, or review based on what it observes, rather than following a fixed sequence. It might skip planning when the current objectives are still valid.
