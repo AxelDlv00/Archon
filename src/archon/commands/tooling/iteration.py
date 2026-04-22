@@ -1,8 +1,12 @@
-"""Per-iteration finalization: git commit, lake build, blueprint web.
+"""Per-phase and per-iteration finalization.
 
-All steps are non-fatal — if `lake build` fails because a prover broke the
-project, we warn and keep going; the next iteration's plan agent will see
-the red state in the report.
+The inner git at `.archon/.git` gets one commit per agent phase (plan,
+refactor, all-provers, review, finalize). The outer git is never touched
+by Archon after init.
+
+`lake build` and `leanblueprint web` still run at the end of each
+iteration as best-effort verification — failures are surfaced but never
+raise.
 """
 
 from __future__ import annotations
@@ -13,16 +17,16 @@ from pathlib import Path
 
 from archon import log
 from archon.commands.tooling.blueprint import Blueprint
-from archon.commands.tooling.git import Git
+from archon.commands.tooling.inner_git import InnerGit
 from archon.commands.tooling.lake import Lake
 
 
 @dataclass
 class IterationFinalizationReport:
     """What happened during this iteration's finalize step."""
-    git_commit_sha: str | None = None
-    git_commit_skipped: bool = False
-    lake_build_ok: bool | None = None   
+    inner_git_sha: str | None = None
+    inner_git_skipped: bool = False
+    lake_build_ok: bool | None = None
     lake_build_error: str | None = None
     lake_build_secs: int | None = None
     blueprint_web_ok: bool | None = None
@@ -33,10 +37,10 @@ class IterationFinalizationReport:
     def to_meta_dict(self) -> dict[str, object]:
         """Return a dict suitable for merging into the iteration's meta.json."""
         d: dict[str, object] = {}
-        if self.git_commit_sha is not None:
-            d["finalize.git.sha"] = self.git_commit_sha
-        if self.git_commit_skipped:
-            d["finalize.git.skipped"] = True
+        if self.inner_git_sha is not None:
+            d["finalize.innerGit.sha"] = self.inner_git_sha
+        if self.inner_git_skipped:
+            d["finalize.innerGit.skipped"] = True
         if self.lake_build_ok is not None:
             d["finalize.lake.ok"] = self.lake_build_ok
             d["finalize.lake.durationSecs"] = self.lake_build_secs or 0
@@ -50,13 +54,55 @@ class IterationFinalizationReport:
         return d
 
 
+# ── per-phase commit helper ───────────────────────────────────────────
+
+
+def commit_phase(
+    project_path: str | Path,
+    *,
+    iter_num: int,
+    phase: str,
+    summary: str,
+    file_slug: str | None = None,
+) -> str | None:
+    """Commit the current inner-git tree as "archon[NNN/phase(/slug)]: summary".
+
+    Best-effort: if the inner git isn't initialized or there's nothing to
+    commit, returns None without raising.
+    """
+    git = InnerGit(project_path)
+    if not git.is_initialized():
+        return None
+    try:
+        made, sha = git.commit_phase(
+            iter_num=iter_num, phase=phase,
+            summary=summary, file_slug=file_slug,
+        )
+    except Exception as e:
+        log.warn(f"inner git commit failed (phase={phase}): {e}")
+        return None
+    if not made:
+        return None
+    suffix = f"/{file_slug}" if file_slug else ""
+    log.success(f"[inner git] archon[{iter_num:03d}/{phase}{suffix}] {sha}")
+    return sha
+
+
+# ── end-of-iteration finalizer ────────────────────────────────────────
+
+
 class IterationFinalizer:
     """Run non-fatal cleanup/verification at the end of each loop iteration.
 
     Three steps, all best-effort:
-      1. `git add -A && git commit -m "archon: iter N (stage=...)"` if anything changed
-      2. `lake build` — surface errors, don't raise
-      3. `leanblueprint web` — surface errors, don't raise
+      1. Commit everything still dirty in the inner git as
+         `archon[NNN/finalize]: <summary>`.
+      2. `lake build` — surface errors, don't raise.
+      3. `leanblueprint web` — surface errors, don't raise.
+
+    Per-phase commits happen earlier, inside the loop, via `commit_phase`.
+    This finalizer just catches any leftover state (task_results archival,
+    sorry-count snapshot, etc.) and wraps up the iteration.
     """
 
     def __init__(
@@ -101,51 +147,37 @@ class IterationFinalizer:
         stage: str,
         sorry_count: int | None,
     ) -> None:
-        try:
-            git = Git(self.project_path, auto_init=False)
-        except Exception as e:
-            report.warnings.append(f"git: {e}")
-            report.git_commit_skipped = True
-            return
-
-        if not git.is_repo():
-            report.git_commit_skipped = True
+        git = InnerGit(self.project_path)
+        if not git.is_initialized():
+            report.inner_git_skipped = True
             return
 
         if not git.is_dirty():
-            report.git_commit_skipped = True
-            log.info("No changes to commit this iteration")
-            return
+            r = git._run(["status", "--porcelain"], check=False)
+            if not r.stdout.strip():
+                report.inner_git_skipped = True
+                return
 
-        # Commit-msg keeps a compact, greppable format so you can track
-        # progress through `git log --oneline`.
-        parts = [f"archon: iter {iter_num:03d}", f"stage={stage}"]
+        summary = f"stage={stage}"
         if sorry_count is not None:
-            parts.append(f"sorry={sorry_count}")
-        msg = " ".join(parts)
+            summary += f" sorry={sorry_count}"
 
-        # Skip .archon/logs/**/*.raw.jsonl-type firehose files if the user
-        # already .gitignore'd .archon/. If not, git will still commit them;
-        # the bootstrap step is expected to have added .archon/ to .gitignore.
         try:
-            made = git.add_and_commit(msg)
+            made, sha = git.commit_phase(
+                iter_num=iter_num, phase="finalize", summary=summary,
+            )
         except Exception as e:
-            report.warnings.append(f"git commit failed: {e}")
-            report.git_commit_skipped = True
+            report.warnings.append(f"inner git commit failed: {e}")
+            report.inner_git_skipped = True
             return
 
         if not made:
-            report.git_commit_skipped = True
+            report.inner_git_skipped = True
             return
 
-        # Read back the SHA.
-        try:
-            r = git._run(["rev-parse", "--short", "HEAD"], check=False)
-            report.git_commit_sha = r.stdout.strip() or None
-        except Exception:
-            pass
-
-        log.success(f"Committed: {msg}" + (f" ({report.git_commit_sha})" if report.git_commit_sha else ""))
+        report.inner_git_sha = sha
+        log.success(f"Committed: archon[{iter_num:03d}/finalize] {summary}"
+                    + (f" ({sha})" if sha else ""))
 
     def _lake_build(self, report: IterationFinalizationReport) -> None:
         if not Lake.available():
@@ -170,10 +202,6 @@ class IterationFinalizer:
             full_error = str(e)
             report.lake_build_error = full_error
 
-            # Full error can be thousands of lines of Lean diagnostics.
-            # We keep a trimmed version for the terminal and persist the
-            # full version to .archon/last_lake_build.log so the plan
-            # agent can read it in the next iteration.
             state_dir = self.project_path / ".archon"
             if state_dir.is_dir():
                 try:
@@ -184,8 +212,6 @@ class IterationFinalizer:
                     pass
 
             preview = full_error.strip().splitlines()
-            # Prefer the last error line over the trailing "command exited"
-            # summary; skim backwards for something that looks like an error.
             snippet = ""
             for line in reversed(preview):
                 low = line.lower()

@@ -14,6 +14,10 @@ You are the prover agent in the proving stage. Your job: fill `sorry` placeholde
 
 **Write permissions**: You may only write to your assigned `.lean` file(s) and your `task_results/<file>.md`. Do NOT edit `PROGRESS.md`, `task_pending.md`, `task_done.md`, or other agents' files.
 
+## Protected declarations
+
+Before editing, read `archon-protected.yaml` at the project root. Declarations listed for your file have **frozen signatures** — you may fill their proof bodies but must not rename them, change their types, reorder their arguments, or weaken their hypotheses. If you discover that a protected signature appears mathematically wrong, keep the file compiling (use `sorry` if needed), document the issue in `task_results/<your_file>.md`, and stop; the plan agent will decide whether to ask the mathematician to unprotect it.
+
 ## Avoid Early Termination
 
 - Do not abandon a proof prematurely

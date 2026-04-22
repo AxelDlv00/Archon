@@ -20,6 +20,13 @@ You are the plan agent. You coordinate proof work across all stages (autoformali
 
 **Important**: You should **NEVER** propose to add new axioms. If axioms are already present, you should absolutely remove them.
 
+## Protected declarations
+
+Read `archon-protected.yaml` at the project root. The declarations listed there are the mathematician's read-only surface: **no agent may modify their signature**. As plan agent:
+
+- Do not assign an objective that would require changing a protected signature.
+- Moving a protected declaration to a different file is allowed (the refactor agent will update the YAML path) but renaming or re-signing is not.
+
 ## References
 
 A paragraph-by-paragraph summary of every informal source is pasted into your prompt from `references/summary.md`. Read it every iteration. Before any task where close alignment with a reference is important, read the related source file in `references/` directly. Do not rely on memory or summaries alone. 
@@ -61,7 +68,7 @@ For each declaration the prover will need to handle, the chapter should contain 
 
 - `\lean{foo.bar}` — declares which Lean name this block corresponds to
 - `\leanok` — added by the prover once formalization is complete (you do not add it)
-- `\notready` — the prover adds this when they can't formalize it yet; you may remove it once you provide a better sketch
+- `\mathlibok` — added when the declaration already exists in Mathlib. Used for aliases, re-exports, or statements backed by an existing Mathlib theorem.
 
 ### Record where the informal content lives
 

@@ -24,10 +24,13 @@ import typer
 
 from archon import log
 from archon.commands.tooling.blueprint import BlueprintServer
+from archon.commands.tooling.inner_git import InnerGit
 from archon.commands.tooling.iteration import (
     IterationFinalizer,
     IterationFinalizationReport,
+    commit_phase,
 )
+from archon.commands.tooling.version import warn_if_mismatch
 from archon.runner import (
     build_parallel_prover_prompt,
     build_plan_prompt,
@@ -67,6 +70,26 @@ def _relpath(path: Path, base: Path) -> str:
 
 def _file_slug(rel: str) -> str:
     return rel.replace("/", "_").replace(os.sep, "_").removesuffix(".lean")
+
+
+# ── inner git dirty warning ───────────────────────────────────────────
+
+
+def _warn_if_inner_dirty(project_path: Path) -> None:
+    """If the inner git has leftover state, tell the user; do not block."""
+    inner = InnerGit(project_path)
+    if not inner.is_initialized() or not inner.is_dirty():
+        return
+
+    log.warn(
+        "Inner git has uncommitted agent work — leftover from a previous "
+        "run or manual edits. This is fine: the loop will pick up whatever "
+        "is on disk."
+    )
+    log.step(
+        f"To wipe it and resume from the last clean commit: "
+        f"archon loop clean {project_path}"
+    )
 
 
 # ── dashboard auto-launch ─────────────────────────────────────────────
@@ -806,6 +829,14 @@ def loop(
 
     log.header("Archon Loop")
     log.key_value(config)
+    warn_if_mismatch(resolved)
+
+    # Warn (but do not block) if the inner git has leftover agent work.
+    # The user may have Ctrl-C'd a previous loop mid-phase, or manually
+    # edited .lean files between runs. We continue normally — the plan
+    # agent will see whatever is on disk. A separate `archon loop clean`
+    # command exists for users who want to reset to the last clean commit.
+    _warn_if_inner_dirty(resolved)
 
     # ── Start background services ────────────────────────────────────
     dashboard_url: str | None = None
@@ -890,6 +921,10 @@ def loop(
         log.info(f"Plan phase finished ({plan_secs}s)")
         if not dry_run:
             write_meta(iter_meta, **{"plan.status": "done", "plan.durationSecs": plan_secs})
+            commit_phase(
+                resolved, iter_num=iter_num_local, phase="plan",
+                summary=f"stage={current_stage} ({plan_secs}s)",
+            )
 
         if is_complete(progress_file, force_stage):
             log.success("PROGRESS.md says COMPLETE. Exiting loop.")
@@ -924,6 +959,13 @@ def loop(
                 sorry_after_refactor = _count_sorries(resolved)
                 if sorry_after_refactor is not None:
                     log.info(f"Sorry count after refactor: {sorry_after_refactor}")
+
+                commit_phase(
+                    resolved, iter_num=iter_num_local, phase="refactor",
+                    summary=(f"sorry={sorry_after_refactor}"
+                             if sorry_after_refactor is not None
+                             else "refactor complete"),
+                )
 
                 if is_complete(progress_file, force_stage):
                     log.success("Plan agent set stage to COMPLETE after refactor. Exiting loop.")
@@ -982,6 +1024,13 @@ def loop(
             log.step(f"Inspect diffs: {dashboard_url}/diffs")
         if not dry_run:
             write_meta(iter_meta, **{"prover.status": "done", "prover.durationSecs": prover_secs})
+            mid_sorry = _count_sorries(resolved)
+            commit_phase(
+                resolved, iter_num=iter_num_local, phase="prover",
+                summary=(f"all-provers sorry={mid_sorry} ({prover_secs}s)"
+                         if mid_sorry is not None
+                         else f"all-provers ({prover_secs}s)"),
+            )
 
         # ── Phase 4: Review ──
         if not no_review and not dry_run:
@@ -997,6 +1046,10 @@ def loop(
             if dashboard_url:
                 log.step(f"Journal: {dashboard_url}/journal")
             write_meta(iter_meta, **{"review.status": "done", "review.durationSecs": review_secs})
+            commit_phase(
+                resolved, iter_num=iter_num_local, phase="review",
+                summary=f"journal session ({review_secs}s)",
+            )
 
         # ── Post-iteration: sorry count ─────────────────────────────
         sorry_after: int | None = None
@@ -1083,3 +1136,67 @@ def _describe_finalize(do_git: bool, do_lake: bool, do_bp: bool) -> str:
     if do_lake: parts.append("lake build")
     if do_bp: parts.append("blueprint web")
     return ", ".join(parts) if parts else "disabled"
+
+
+# ── archon clean ─────────────────────────────────────────────────────
+
+
+def clean(
+    project_path: str = typer.Argument(".", help="Path to Lean project."),
+    yes: bool = typer.Option(
+        False, "--yes", "-y",
+        help="Skip the confirmation prompt. Dangerous.",
+    ),
+) -> None:
+    """Reset the inner-git working tree to the last clean commit.
+
+    Discards any uncommitted agent work (e.g. leftover from a Ctrl-C'd
+    loop). This rewrites files on disk. The outer (mathematician's) git
+    repo is NOT touched — but be aware: if you have uncommitted
+    mathematician work, we refuse, because the inner reset would clobber
+    it.
+
+    [bold]Examples:[/bold]
+      [cyan]archon clean .[/cyan]
+    """
+    resolved = Path(project_path).resolve()
+    if not (resolved / ".archon").is_dir():
+        log.error(f"Not an Archon project: {resolved}")
+        raise typer.Exit(1)
+    warn_if_mismatch(resolved)
+
+    inner = InnerGit(resolved)
+    if not inner.is_initialized():
+        log.info("Inner git not initialized — nothing to clean.")
+        return
+
+    if not inner.is_dirty():
+        log.info("Inner git is already clean — nothing to do.")
+        return
+
+    outer_git_path = resolved / ".git"
+    if outer_git_path.is_dir():
+        from archon.commands.tooling.git import Git as _OuterGit
+        outer = _OuterGit(resolved, auto_init=False)
+        if outer.is_dirty():
+            log.error(
+                "The outer git repo is dirty. `archon clean` would overwrite "
+                "files you haven't committed. Commit or stash your work first."
+            )
+            raise typer.Exit(1)
+
+    log.warn("This will discard uncommitted agent changes in the inner git:")
+    log.step(f"  HEAD is {inner.head_sha() or '?'} on branch '{inner.current_branch() or '?'}'")
+    log.step("  Files on disk will be rewritten to match.")
+
+    if not yes and not typer.confirm("Continue?", default=False):
+        raise typer.Exit(0)
+
+    try:
+        inner._run(["checkout", "--", "."])
+        inner._run(["clean", "-fd"])
+    except Exception as e:
+        log.error(f"Inner git reset failed: {e}")
+        raise typer.Exit(1)
+
+    log.success("Inner git working tree reset to last clean commit.")

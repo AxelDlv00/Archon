@@ -83,6 +83,55 @@ def write_template(project_path: Path) -> Path:
     return target
 
 
+def update_path(project_path: Path, old_rel: str, new_rel: str) -> bool:
+    """Rename a file key in archon-protected.yaml.
+
+    Used by the refactor agent when it moves a protected declaration from
+    `old_rel` to `new_rel`. Declaration names are preserved; only the file
+    path under which they are listed changes.
+
+    Merges with any existing entry at `new_rel`, deduplicating declaration
+    names. Returns True iff the YAML was modified.
+    """
+    target = protected_file_path(project_path)
+    if not target.exists():
+        return False
+
+    try:
+        raw = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return False
+
+    if not isinstance(raw, dict):
+        return False
+
+    if old_rel not in raw:
+        return False
+
+    old_entries = raw.pop(old_rel)
+    if not isinstance(old_entries, list):
+        old_entries = []
+
+    merged = list(raw.get(new_rel, []) or [])
+    for name in old_entries:
+        if isinstance(name, str) and name not in merged:
+            merged.append(name)
+    raw[new_rel] = merged
+
+    # Preserve the header comments by writing a fresh template header + YAML.
+    yaml_body = yaml.safe_dump(raw, sort_keys=True, default_flow_style=False)
+    existing = target.read_text(encoding="utf-8")
+    header = []
+    for line in existing.splitlines():
+        if line.startswith("#") or not line.strip():
+            header.append(line)
+        else:
+            break
+    new_text = "\n".join(header).rstrip() + "\n\n" + yaml_body
+    target.write_text(new_text, encoding="utf-8")
+    return True
+
+
 def load(project_path: Path) -> ProtectedSet:
     """Parse archon-protected.yaml. Silently drops malformed entries.
 

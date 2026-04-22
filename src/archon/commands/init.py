@@ -25,6 +25,7 @@ from archon import log
 from archon.commands.tooling import protect
 from archon.commands.tooling.blueprint import Blueprint
 from archon.commands.tooling.git import Git
+from archon.commands.tooling.inner_git import InnerGit
 from archon.commands.tooling.lake import Lake
 from archon.commands.tooling.project import (
     BootstrapOptions,
@@ -33,6 +34,7 @@ from archon.commands.tooling.project import (
     ProjectLayout,
     WorkspaceTemplates,
 )
+from archon.commands.tooling.version import ProjectVersion, warn_if_mismatch
 
 # ── helpers ───────────────────────────────────────────────────────────
 
@@ -641,6 +643,51 @@ def _step_report_protected(project_path: Path) -> None:
     )
 
 
+# ── inner git + version stamp ─────────────────────────────────────────
+
+
+def _step_inner_git(project_path: Path) -> None:
+    """Initialize the inner `.archon/.git` repo and capture the current state.
+
+    Archon keeps its own versioning here — every agent phase commits. The
+    outer (mathematician's) git repo is untouched after init.
+    """
+    log.phase(8, "Inner git (.archon/.git)")
+
+    if not InnerGit.available():
+        log.warn("`git` not on PATH — skipping inner-git setup. Run: archon setup")
+        return
+
+    inner = InnerGit(project_path)
+    created = inner.init()
+    if created:
+        log.step("Initialized inner git at .archon/.git")
+    else:
+        log.step("Inner git already present at .archon/.git")
+
+    # First commit captures the state at init time so subsequent phase
+    # commits have a baseline to diff against.
+    made_initial = inner.ensure_initial_commit("archon[000/init]: initial state")
+    if made_initial:
+        log.success(f"Inner git first commit: {inner.head_sha() or '?'}")
+    else:
+        log.info(f"Inner git HEAD: {inner.head_sha() or '?'}")
+
+
+def _step_version_stamp(project_path: Path) -> None:
+    """Stamp the current CLI version into .archon/VERSION."""
+    log.phase(9, "Version stamp")
+    pv = ProjectVersion(project_path)
+    previous = pv.read()
+    written = pv.write()
+    if previous is None:
+        log.success(f"Stamped project version: {written}")
+    elif previous != written:
+        log.success(f"Updated project version: {previous} → {written}")
+    else:
+        log.step(f"Project version unchanged: {written}")
+
+
 # ── main command ──────────────────────────────────────────────────────
 
 
@@ -690,6 +737,8 @@ def init(
         "State dir": str(state_dir),
     })
 
+    warn_if_mismatch(resolved)
+
     if not _has("claude"):
         log.error("Claude Code is not installed. Run: archon setup")
         raise typer.Exit(1)
@@ -715,6 +764,8 @@ def init(
             _step_skills(resolved)
             _step_disable_conflicting_plugins(resolved)
             _step_report_protected(resolved)
+            _step_inner_git(resolved)
+            _step_version_stamp(resolved)
             log.success("Verification complete.")
             return
 
@@ -739,5 +790,11 @@ def init(
         log.success("Merge-based re-init complete.")
         log.step(f"Next: archon loop {resolved}")
 
-    # Always show the protected-declarations summary as the final phase.
+    # Always show the protected-declarations summary.
     _step_report_protected(resolved)
+
+    # Inner-git setup + version stamp are last so the initial inner-git
+    # commit captures the full post-init state (including whatever Claude
+    # wrote during the semantic pass).
+    _step_inner_git(resolved)
+    _step_version_stamp(resolved)
