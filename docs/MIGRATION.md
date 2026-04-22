@@ -311,11 +311,11 @@ state of a project:
 
 ```bash
 cd /path/to/your-lean-project
-git checkout .archon/
+cp -r .archon-backup/ .archon/
 ```
 
-This restores `.archon/` exactly as it was when you committed in
-section 3.1. The MCP and plugin registrations can be refreshed by running
+Where `.archon-backup/` is a copy of `.archon/` from before the migration. Note that by default `.archon/` is gitignored.
+The MCP and plugin registrations can be refreshed by running
 the old `init.sh` again from your former Archon checkout, or by
 re-running `archon init` and picking **keep**.
 
