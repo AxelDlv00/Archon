@@ -8,7 +8,7 @@ starting from scratch, you don't need this file — follow the
 
 ## TL;DR
 
-*It is always safer to backup your project before running a migration. We recommend committing all changes to git and pushing to a remote before starting.*
+*It is always safer to backup your project before running a migration. We recommend committing all changes to git and pushing to a remote before starting. However, be aware that some files are gitignored by default (e.g. `.archon/`)*
 
 1. **Reinstall** the tool with the new one-line installer.
 2. **Re-run `archon init`** in each project that was initialized by an older
@@ -161,8 +161,7 @@ git add -A && git commit -m "checkpoint before archon v0.1.0 migration"
 ```
 
 If you have customizations under `.archon/prompts/` or in `.archon/CLAUDE.md`
-that you want to keep, they will also be committed by this step and
-recoverable from git history if anything goes wrong.
+that you want to keep, be aware that currently `.archon/` is gitignored.
 
 ### 3.2 Run `archon init`
 
@@ -288,13 +287,7 @@ terminal with `archon dashboard /path/to/your-lean-project`.
 
 ### I accidentally chose overwrite and lost my prompt edits
 
-If you committed your project before migrating (section 3.1), your edits
-are in git history:
-
-```bash
-git log -- .archon/prompts/
-git show <commit>:.archon/prompts/<file>.md
-```
+If you committed your project before migrating (section 3.1), please note that `.archon` is gitignored by default, so you should create a backup beforehand if you want to recover your old prompts.
 
 ### I initialized successfully but the loop complains about the stage being "init"
 
