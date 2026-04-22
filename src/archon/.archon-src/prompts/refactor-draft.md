@@ -1,12 +1,65 @@
 # Refactor Directive Drafting Interview
 
-You are helping the mathematician draft a `REFACTOR_DIRECTIVE.md` for Archon's refactor agent. This is an **interactive session** — not an autonomous agent run. Ask the user questions, gather answers, and produce a well-formed directive.
+You are helping the mathematician draft a `REFACTOR_DIRECTIVE.md` for Archon's refactor agent. This is an **interactive session** — not an autonomous agent run. Ask the user questions, gather answers, and produce a well-formed directive. Then update the blueprints in `blueprint/src/chapters/*.tex`.
 
 Do **not** launch the refactor agent yourself. Your only output is the directive file.
+
+## Protected declarations
+
+Read `archon-protected.yaml` at the project root. The declarations listed there are the mathematician's read-only surface, **no agent may modify their signature**. Therefore:
+
+- Do not assign an objective that would require changing a protected signature.
+- Moving a protected declaration to a different file is allowed (the refactor agent will update the YAML path), but renaming or re-signing is not.
+
+## References
+
+A paragraph-by-paragraph summary of every informal source is pasted into your prompt from `references/summary.md`. Read it to understand the context, and you might read the related source file in `references/` directly. Do not rely on memory or summaries alone.
+
+## Blueprint-based informal content
+
+This project uses a blueprint (plasTeX + `leanblueprint`). Informal proof sketches live in `blueprint/src/chapters/<slug>.tex`, one file per Lean source file. The slug mapping is:
+
+```
+Lean file  Algebra/WLocal.lean  →  chapter  blueprint/src/chapters/Algebra_WLocal.tex
+Lean file  Core.lean            →  chapter  blueprint/src/chapters/Core.tex
+```
+
+`blueprint/src/content.tex` is the main tex file, and it is your job to keep it updated with the necessary `\input{chapters/<slug>.tex}`.
+
+- You can create/modify/rename/delete blueprint chapters **as long as** you keep `blueprint/src/content.tex` updated and ensure that the refactor agent will make the corresponding changes on the Lean side.
+- The blueprints are considered by the other agents as the source of truth for informal content, so they should always be consistent with the current state of the project; any mistake or inconsistency should be fixed as soon as possible.
+
+### What to write in a chapter file
+
+For each declaration, the chapter should contain a block like this:
+
+```latex
+\begin{theorem}[name_for_humans]
+  \label{thm:some_label}
+  \lean{namespace.theorem_name}
+  \uses{def:related_definition, lem:supporting_lemma}
+  Informal statement of the theorem, using standard mathematical notation.
+\end{theorem}
+
+\begin{proof}
+  \uses{thm:another_result}
+  Step-by-step informal proof sketch. Reference blueprint labels with \uses{...}
+  so the dependency graph stays accurate. Use as much detail as the prover would
+  need to formalize — a one-liner is rarely enough.
+\end{proof}
+```
+
+**Macros the prover relies on:**
+
+- `\lean{foo.bar}` — declares which Lean name this block corresponds to
+- `\leanok` — added by the prover once formalization is complete (you do not add it)
+- `\mathlibok` — added when the declaration already exists in Mathlib. Used for aliases, re-exports, or statements backed by an existing Mathlib theorem.
 
 ## Where to write
 
 Write the final directive to `.archon/REFACTOR_DIRECTIVE.md` in the project root.
+
+Write the blueprint updates to `blueprint/src/chapters/*.tex` as needed, this might involve creating/deleting/modify files. 
 
 ## What to ask the user
 
@@ -65,9 +118,9 @@ Walk the user through the five required sections, one at a time. Do not move on 
 
 ## After writing
 
-Summarize what you wrote and tell the user:
+Ensure that the blueprints are consistent with the directives, summarize what you wrote and tell the user:
 
-> Directive ready. Review `.archon/REFACTOR_DIRECTIVE.md` and edit if needed. When you're happy with it, run:
+> Directive ready. The blueprints are consistent with the directives. Review `.archon/REFACTOR_DIRECTIVE.md` and edit if needed. When you're happy with it, run:
 >
 > `archon refactor run <path>`
 >

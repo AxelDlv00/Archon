@@ -36,7 +36,7 @@ Your only interaction with the blueprint is to **Read** the chapter to understan
 - Prefer using existing Mathlib lemmas/definitions
 - Do not reintroduce concepts already in Mathlib
 - If the informal proof's notion matches Mathlib's, lean on the Mathlib definition and prove equivalence/instances as needed
-- Use mathematically meaningful names; avoid problem-specific or ad-hoc names unless already present in the skeleton
+- Use mathematically meaningful names; avoid problem-specific or ad-hoc names
 - **Never modify working proofs** — if a declaration has no `sorry` and compiles, do not touch its proof body unless repeated verification shows the proof is semantically wrong.
 
 ## Logging

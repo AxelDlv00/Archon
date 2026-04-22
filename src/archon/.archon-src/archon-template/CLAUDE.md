@@ -42,10 +42,11 @@ All state files are in `.archon/`:
 
 - **Plan / prover / review agents**: read-only on protected signatures. You may fill proof bodies, but not rename, re-type, or reorder arguments.
 - **Refactor agent**: may *move* a protected declaration to a different file (keeping name + signature verbatim) and must then update the path key in `archon-protected.yaml`. Refactor agents may never rename, re-type, delete, or re-sign a protected declaration.
+- The `archon-protected.yaml` file can only be edited by the user, no declaration can be added or removed by any agent. The only allowed modification is updating the file path of an existing protected declaration when its location was changed. 
 
 ## Blueprint Marker Vocabulary
 
-The blueprint uses two active markers. `\notready` is deprecated and should never appear.
+The blueprint uses two active markers.
 
 - `\leanok` — inside a statement block when the declaration is formalized with at least a `sorry`; inside a proof block when the proof is fully closed with no `sorry`.
 - `\mathlibok` — inside a statement block when the declaration already exists in Mathlib and the Archon side is a re-export/alias; no Archon proof obligation remains.
