@@ -154,12 +154,19 @@ fallback overwrite flow only touch `.archon/` and your project-scope Claude
 Code registrations, not your `.lean` files — but you should have a clean
 checkpoint anyway before running any tool that edits project state.
 
+Commit `lean` files:
+
 ```bash
 cd /path/to/your-lean-project
-cp -r .archon/ .archon-backup/
 git add .
 git commit -m "Backup before Archon CLI migration"
 git push
+```
+
+Back-up `.archon/` state files:
+
+```bash 
+cp -r .archon/ .archon-backup/
 ```
 
 If you have customizations under `.archon/prompts/` or in `.archon/CLAUDE.md`
