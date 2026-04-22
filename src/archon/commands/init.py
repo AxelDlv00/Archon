@@ -22,6 +22,7 @@ from pathlib import Path
 import typer
 
 from archon import log
+from archon.commands.tooling import protect
 from archon.commands.tooling.blueprint import Blueprint
 from archon.commands.tooling.git import Git
 from archon.commands.tooling.lake import Lake
@@ -336,6 +337,8 @@ def _step_bootstrap(project_path: Path) -> BootstrapReport:
     """Run the deterministic lake/git/mathlib/blueprint bootstrap.
 
     This replaces what used to be Claude's job in init.md steps 1–2.
+    Safe to call on an already-initialized project — every sub-step is
+    idempotent, and the bootstrap only commits if it actually did work.
     """
     log.phase(3, "Bootstrapping Lean project (lake, git, mathlib, blueprint)")
 
@@ -354,7 +357,7 @@ def _step_bootstrap(project_path: Path) -> BootstrapReport:
         add_mathlib=True,
         init_blueprint=Blueprint.available(),
         fetch_mathlib_cache=True,
-        do_initial_build=True, 
+        do_initial_build=True,
         project_title=project_path.name,
     )
 
@@ -516,8 +519,9 @@ def _step_claude_semantic_pass(
     """Launch Claude for the narrow semantic tasks that remain after bootstrap.
 
     Claude's job is: verify the bootstrap, reorganize loose reference files,
-    fill in the README / summary.md prose, and propose initial objectives.
-    Everything deterministic has already happened.
+    fill in the README / summary.md prose, walk the user through the initial
+    archon-protected.yaml, and propose initial objectives. Everything
+    deterministic has already happened.
     """
     stage = _parse_stage(state_dir / "PROGRESS.md")
     project_name = project_path.name
@@ -567,8 +571,10 @@ def _step_claude_semantic_pass(
 
         When the user has confirmed and you have finished the init steps, run \
         /archon-lean4:doctor to verify the full setup before exiting.
-        
-        Remark: A bootstrap process has already run to install lake, mathlib, and other deterministic setup. Here is its report:
+
+        Remark: A bootstrap process has already run to install lake, mathlib, and \
+        other deterministic setup, including creating an empty \
+        {protect.PROTECTED_FILENAME} at the project root. Here is its report:
         {json.dumps(bootstrap_summary, indent=2)}
         """)
 
@@ -585,6 +591,54 @@ def _step_claude_semantic_pass(
     else:
         log.success(f"Init complete — stage is now: {new_stage}")
         log.step(f"Next: archon loop {project_path}")
+
+
+# ── protected-declarations summary ────────────────────────────────────
+
+
+def _step_report_protected(project_path: Path) -> None:
+    """Log the contents of archon-protected.yaml and remind the user to edit it.
+
+    Always the last phase of init, regardless of whether this was a fresh
+    init or a merge-based re-init. The user should leave the CLI knowing
+    exactly which declarations agents will refuse to touch — or that the
+    list is empty and they should go fill it in.
+    """
+    log.phase(7, "Protected declarations")
+    ps = protect.load(project_path)
+
+    if not ps.entries:
+        log.info(
+            f"{protect.PROTECTED_FILENAME} is empty — no declarations are "
+            "currently protected from agent edits."
+        )
+        log.step(
+            f"List declarations you want Archon to treat as read-only in "
+            f"{protect.PROTECTED_FILENAME} at the project root. "
+            "Agents will refuse to modify their signatures."
+        )
+        return
+
+    total = ps.total_count()
+    log.info(f"{total} protected declaration(s) across {len(ps.entries)} file(s):")
+    shown = 0
+    done = False
+    for file, names in ps.entries.items():
+        if done:
+            break
+        log.step(f"  [bold]{file}[/bold]")
+        for n in names:
+            log.step(f"    - {n}")
+            shown += 1
+            if shown >= 20:
+                done = True
+                break
+    if total > shown:
+        log.step(f"  ... and {total - shown} more")
+    log.step(
+        f"Edit {protect.PROTECTED_FILENAME} to add or remove entries. "
+        "It is committed to git so the whole team shares it."
+    )
 
 
 # ── main command ──────────────────────────────────────────────────────
@@ -660,6 +714,7 @@ def init(
             _step_lean_lsp_mcp(resolved)
             _step_skills(resolved)
             _step_disable_conflicting_plugins(resolved)
+            _step_report_protected(resolved)
             log.success("Verification complete.")
             return
 
@@ -683,3 +738,6 @@ def init(
     else:
         log.success("Merge-based re-init complete.")
         log.step(f"Next: archon loop {resolved}")
+
+    # Always show the protected-declarations summary as the final phase.
+    _step_report_protected(resolved)

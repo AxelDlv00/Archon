@@ -19,6 +19,7 @@ from pathlib import Path
 from archon.commands.tooling.blueprint import Blueprint, BlueprintAnswers
 from archon.commands.tooling.git import Git
 from archon.commands.tooling.lake import Lake
+from archon.commands.tooling import protect
 from archon.commands.tooling.stage import StageReport, scan_project
 
 from archon import log
@@ -30,6 +31,23 @@ REFERENCE_EXTS = {".pdf", ".tex", ".bib"}
 # Markdown files that aren't obviously part of the project (README, CHANGELOG,
 # LICENSE) are also treated as references.
 _MD_KEEP_AT_ROOT = {"readme.md", "changelog.md", "license.md", "contributing.md"}
+
+
+# Paths the bootstrap is allowed to create or modify. When we commit, we
+# only stage these — never anything else the user might have dirty in
+# their tree. Keeping this list narrow means re-running bootstrap can
+# never sweep unrelated user edits into a "chore: bootstrap" commit.
+_BOOTSTRAP_OWNED_PATHS = [
+    ".gitignore",
+    "lakefile.lean",
+    "lakefile.toml",
+    "lake-manifest.json",
+    "lean-toolchain",
+    "blueprint",
+    "references",
+    "archon-protected.yaml",
+    "README.md",
+]
 
 
 # ── layout detection ──────────────────────────────────────────────────
@@ -122,14 +140,24 @@ class BootstrapOptions:
 
 @dataclass
 class BootstrapReport:
-    """What the bootstrap actually did. Surfaces to the user + Claude."""
+    """What the bootstrap actually did. Surfaces to the user + Claude.
+
+    `did_work` tracks whether any step actually mutated the project tree.
+    No-op paths ("already present", `lake update` that found nothing,
+    etc.) should call `report.add(..., changed=False)` so `did_work`
+    stays False and we don't create a bogus commit on re-init.
+    """
     actions: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     stage_report: StageReport | None = None
+    did_work: bool = False
 
-    def add(self, msg: str) -> None:
+    def add(self, msg: str, *, changed: bool = True) -> None:
+        """Record an action. Pass `changed=False` for no-op reports."""
         self.actions.append(msg)
+        if changed:
+            self.did_work = True
 
     def warn(self, msg: str) -> None:
         self.warnings.append(msg)
@@ -164,6 +192,7 @@ class ProjectBootstrap:
         self._ensure_mathlib(report)
         self._ensure_blueprint(report)
         self._ensure_workspace_dirs(report)
+        self._ensure_protected_file(report)
         self._commit_bootstrap_changes(report)
         self._scan_stage(report)
 
@@ -184,8 +213,10 @@ class ProjectBootstrap:
         if not self.git.is_repo():
             report.warn("git init was expected to have run in Git.__init__")
             return
+        # The initial empty commit is infrastructure, not "bootstrap work"
+        # that other dirty files should be swept into. Mark changed=False.
         if self.git.ensure_initial_commit():
-            report.add("Created initial empty git commit")
+            report.add("Created initial empty git commit", changed=False)
 
     def _ensure_lake(self, report: BootstrapReport) -> None:
         if not self.options.init_lake:
@@ -194,7 +225,7 @@ class ProjectBootstrap:
 
         info = self.lake.lakefile_info()
         if info.path is not None:
-            report.add(f"Lake project already present ({info.kind})")
+            report.add(f"Lake project already present ({info.kind})", changed=False)
             return
 
         name = self.options.project_title or self.path.name
@@ -216,7 +247,7 @@ class ProjectBootstrap:
             return
 
         if info.has_mathlib:
-            report.add("Mathlib dependency already declared")
+            report.add("Mathlib dependency already declared", changed=False)
         else:
             try:
                 modified = self.lake.add_mathlib_dependency()
@@ -226,9 +257,14 @@ class ProjectBootstrap:
                 report.warn(f"Failed to add Mathlib dependency: {e}")
                 return
 
+        # `lake update` / cache-get / build only touch .lake/ (gitignored)
+        # and lake-manifest.json. They don't constitute "bootstrap work"
+        # on their own on a re-run — if the manifest genuinely changed,
+        # that was caused by the Mathlib-add step above, which already
+        # flipped did_work.
         try:
             self.lake.update()
-            report.add("Ran `lake update`")
+            report.add("Ran `lake update`", changed=False)
         except Exception as e:
             report.warn(f"`lake update` failed: {e}")
             return
@@ -238,12 +274,12 @@ class ProjectBootstrap:
             if note.startswith("(mathlib cache unavailable"):
                 report.warn(f"Mathlib cache not fetched — {note}")
             else:
-                report.add("Fetched Mathlib olean cache")
+                report.add("Fetched Mathlib olean cache", changed=False)
 
         if self.options.do_initial_build:
             try:
                 self.lake.build()
-                report.add("Ran `lake build`")
+                report.add("Ran `lake build`", changed=False)
             except Exception as e:
                 report.warn(f"`lake build` failed (this may be expected for a fresh project): {e}")
 
@@ -253,7 +289,7 @@ class ProjectBootstrap:
             return
 
         if self.blueprint.is_initialized():
-            report.add("Blueprint already initialized")
+            report.add("Blueprint already initialized", changed=False)
             return
 
         if not Blueprint.available():
@@ -283,13 +319,39 @@ class ProjectBootstrap:
             refs.mkdir(parents=True, exist_ok=True)
             report.add("Created references/ directory")
 
+    def _ensure_protected_file(self, report: BootstrapReport) -> None:
+        """Create archon-protected.yaml if missing. Never overwrites user edits."""
+        if protect.exists(self.path):
+            report.add(f"{protect.PROTECTED_FILENAME} already present", changed=False)
+            return
+        protect.write_template(self.path)
+        report.add(f"Created {protect.PROTECTED_FILENAME} template")
+
     def _commit_bootstrap_changes(self, report: BootstrapReport) -> None:
-        if self.git.is_dirty():
-            made = self.git.add_and_commit(
-                "chore: bootstrap Lean project (lake, Mathlib, blueprint, workspace)"
-            )
-            if made:
-                report.add("Committed bootstrap changes")
+        """Commit bootstrap's own changes — and only its own.
+
+        Two guards:
+          1. If no step flipped `did_work`, skip entirely. A dirty tree
+             from unrelated user edits is not our problem.
+          2. Even when we do commit, stage only `_BOOTSTRAP_OWNED_PATHS`
+             that actually exist, so we can't accidentally absorb the
+             user's in-flight Lean edits.
+        """
+        if not report.did_work:
+            return
+
+        existing_owned = [
+            p for p in _BOOTSTRAP_OWNED_PATHS if (self.path / p).exists()
+        ]
+        if not existing_owned:
+            return
+
+        made = self.git.add_and_commit(
+            "chore: bootstrap Lean project (lake, Mathlib, blueprint, workspace)",
+            paths=existing_owned,
+        )
+        if made:
+            report.add("Committed bootstrap changes", changed=False)
 
     def _scan_stage(self, report: BootstrapReport) -> None:
         try:
@@ -327,6 +389,7 @@ See [`references/summary.md`](references/summary.md) for a description of each s
 - `{lean_root}/` — main Lean source
 - `blueprint/` — leanblueprint source (build with `leanblueprint pdf` and `leanblueprint web`)
 - `references/` — PDFs, papers, and informal notes backing the formalization
+- `archon-protected.yaml` — declarations agents must not modify
 - `.archon/` — agent state (not committed)
 
 ## How to build
@@ -352,7 +415,7 @@ This launches the plan → prove → review loop and opens a dashboard.
 <!-- One short line per file describing what it is and which parts of the formalization it backs. -->
 <!-- Claude maintains this file; keep entries in sync with the contents of this directory. -->
 
-| File | Description | 
+| File | Description |
 | ---- | ----------- |
 """
 
@@ -365,12 +428,12 @@ This launches the plan → prove → review loop and opens a dashboard.
 
         if readme.exists():
             content = readme.read_text(encoding="utf-8")
-            
+
             # If the file contains the Archon signature, we assume it's already been set up and skip it.
             if "archon:readme" in content:
                 return False
-                
-            # If the file is somewhat long, it might be a user's custom README 
+
+            # If the file is somewhat long, it might be a user's custom README
             if len(content.strip()) > 150:
                 backup = self.path / "README.old.md"
                 readme.rename(backup)
