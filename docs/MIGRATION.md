@@ -156,8 +156,10 @@ checkpoint anyway before running any tool that edits project state.
 
 ```bash
 cd /path/to/your-lean-project
-git status
-git add -A && git commit -m "checkpoint before archon v0.1.0 migration"
+cp -r .archon/ .archon-backup/
+git add .
+git commit -m "Backup before Archon CLI migration"
+git push
 ```
 
 If you have customizations under `.archon/prompts/` or in `.archon/CLAUDE.md`
