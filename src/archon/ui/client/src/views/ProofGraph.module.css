@@ -145,6 +145,8 @@
 
 /* Commit tooltip (rendered as foreignObject inside the SVG) */
 .gitTooltip {
+  position: absolute;
+  z-index: 100;
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -153,9 +155,11 @@
   box-shadow: 0 3px 10px rgba(0,0,0,0.18);
   width: max-content;
   max-width: 240px;
+  pointer-events: none;
 }
 .gitTooltipSha { font-weight: 700; color: var(--text-primary); font-family: var(--font-mono); font-size: 10px; margin-bottom: 2px; }
 .gitTooltipMsg { color: var(--text-muted); font-size: 10px; margin-bottom: 4px; word-break: break-word; }
+.gitTooltipHint { font-size: 10px; color: var(--text-muted); margin-bottom: 2px; }
 .gitTooltipCmd { font-family: var(--font-mono); font-size: 10px; color: var(--blue); font-weight: 600; }
 
 /* ── Shared / misc ── */

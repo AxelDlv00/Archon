@@ -163,11 +163,10 @@ function buildTimeline(lp: string, pp: string) {
 
 function buildGraphAt(lp: string, pp: string, iteration: string) {
   const state = resolveState(lp, iteration);
-  const allD: LD[] = []; const covered = new Set<string>();
-  for (const [, { content, dn }] of state) { allD.push(...parseContent(content, dn)); covered.add(dn); }
-  (function walk(dir: string) {
-    try { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const f = path.join(dir, e.name); if (e.isDirectory()) { if (!['_lake','.lake','.archon','node_modules','.git'].includes(e.name)) walk(f); } else if (e.isFile() && e.name.endsWith('.lean')) { const rel = path.relative(pp, f); if (!covered.has(rel)) allD.push(...parseFile(f, rel)); } } } catch { /* */ }
-  })(pp);
+  const allD: LD[] = [];
+  // For historical iterations only use snapshot data — no disk walk.
+  // A disk walk would add current on-disk files that didn't exist at that point.
+  for (const [, { content, dn }] of state) { allD.push(...parseContent(content, dn)); }
   const ed = edges(allD);
   const fg: Record<string, { file: string; declarations: string[] }> = {};
   for (const d of allD) { if (!fg[d.file]) fg[d.file] = { file: d.file, declarations: [] }; fg[d.file].declarations.push(d.name); }

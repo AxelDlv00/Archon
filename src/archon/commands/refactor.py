@@ -189,7 +189,9 @@ def run(
 
     prompt = build_refactor_prompt(project_name, resolved, state_dir, directive)
 
-    log_base = state_dir / "logs" / f"refactor-{int(time.time())}"
+    iter_log_dir = state_dir / "logs" / f"iter-{iter_num:03d}"
+    iter_log_dir.mkdir(parents=True, exist_ok=True)
+    log_base = iter_log_dir / "refactor"
     start = time.monotonic()
     ok = run_claude(prompt, cwd=resolved, log_base=log_base, verbose_logs=verbose_logs)
     secs = int(time.monotonic() - start)

@@ -265,7 +265,12 @@ function computeGitLayout(commits: GitCommit[], containerW: number) {
   return { ordered, nodes, branchOrder, shaToPos, svgW, svgH, spacing };
 }
 
-interface TooltipState { commit: GitCommit; svgX: number; svgY: number; }
+interface TooltipState {
+  commit: GitCommit;
+  // position relative to the scrollable container (accounts for scroll offset)
+  left: number;
+  top: number;
+}
 
 function GitTree({
   commits,
@@ -279,6 +284,7 @@ function GitTree({
   containerW: number;
 }) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const [branchTooltip, setBranchTooltip] = useState<{ label: string; left: number; top: number } | null>(null);
   const [showBranchHint, setShowBranchHint] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -290,33 +296,48 @@ function GitTree({
   if (!commits.length) {
     return (
       <div className={styles.gitEmpty}>
-        No commits in inner git repo yet. Run an archon command to start.
+        No commits yet. Run an archon command to start.
       </div>
     );
   }
 
-  // Plus button position (right edge of last commit)
   const lastNode = nodes[nodes.length - 1];
   const plusX = lastNode ? lastNode.x + spacing * 0.6 : PAD_X + 20;
   const plusY = PAD_Y - 8;
+
+  // Convert SVG-local coordinates to container-relative for tooltip placement
+  function svgToContainer(svgX: number, svgY: number) {
+    const scroll = scrollRef.current?.scrollLeft ?? 0;
+    return { left: svgX - scroll, top: svgY };
+  }
 
   return (
     <div ref={scrollRef} className={styles.gitScroll}>
       <svg width={svgW} height={svgH} style={{ display: 'block', minWidth: svgW }}>
 
-        {/* Branch lane labels + dashed lane lines */}
+        {/* Branch lane labels — full label in SVG title for native tooltip fallback */}
         {branchOrder.map((b, i) => {
           const y = PAD_Y + i * LANE_H;
           const col = BRANCH_COLORS[i % BRANCH_COLORS.length];
           const lastOnBranch = [...nodes].reverse().find(n => n.lane === i);
           const lineEndX = lastOnBranch ? lastOnBranch.x : PAD_X;
+          const display = b.length > 10 ? b.slice(0, 9) + '…' : b;
           return (
-            <g key={b}>
+            <g key={b}
+              onMouseEnter={e => {
+                if (b.length <= 10) return;
+                const pos = svgToContainer(PAD_X - 4, y - 22);
+                setBranchTooltip({ label: b, left: pos.left, top: pos.top });
+              }}
+              onMouseLeave={() => setBranchTooltip(null)}
+            >
+              <title>{b}</title>
               <line x1={PAD_X} y1={y} x2={lineEndX} y2={y}
                 stroke={col} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.35} />
               <text x={PAD_X - 6} y={y + 4} fontSize={9} fill={col}
-                textAnchor="end" fontFamily="var(--font-mono)" fontWeight={600}>
-                {b.length > 9 ? b.slice(0, 8) + '…' : b}
+                textAnchor="end" fontFamily="var(--font-mono)" fontWeight={600}
+                style={{ cursor: b.length > 10 ? 'default' : 'default' }}>
+                {display}
               </text>
             </g>
           );
@@ -331,12 +352,13 @@ function GitTree({
           if (sameLane) {
             return <line key={`${n.commit.sha}-${pSha}`}
               x1={n.x} y1={n.y} x2={pNode.x} y2={pNode.y}
-              stroke={col} strokeWidth={1.5} opacity={0.6} />;
+              stroke={col} strokeWidth={1.5} opacity={0.55} />;
           }
+          // Cross-lane: cubic bezier
           const mx = (n.x + pNode.x) / 2;
           return <path key={`${n.commit.sha}-${pSha}`}
             d={`M${n.x},${n.y} C${mx},${n.y} ${mx},${pNode.y} ${pNode.x},${pNode.y}`}
-            fill="none" stroke={col} strokeWidth={1.5} opacity={0.6} />;
+            fill="none" stroke={col} strokeWidth={1.5} opacity={0.55} />;
         }))}
 
         {/* Commit nodes */}
@@ -345,18 +367,12 @@ function GitTree({
           const col = BRANCH_COLORS[n.lane % BRANCH_COLORS.length];
           const isSel = c.sha === selectedSha;
           const isPhaseEnd = !!c.phase && !c.fileSlug;
-          const phaseLabel = isPhaseEnd ? c.phase! : '';
           return (
             <g key={c.sha} style={{ cursor: 'pointer' }}
               onClick={() => onSelect(c)}
-              onMouseEnter={(e) => {
-                const rect = scrollRef.current?.getBoundingClientRect();
-                const scrollLeft = scrollRef.current?.scrollLeft ?? 0;
-                if (rect) setTooltip({
-                  commit: c,
-                  svgX: n.x - scrollLeft,
-                  svgY: n.y,
-                });
+              onMouseEnter={() => {
+                const pos = svgToContainer(n.x, n.y);
+                setTooltip({ commit: c, left: pos.left, top: pos.top });
               }}
               onMouseLeave={() => setTooltip(null)}
             >
@@ -366,11 +382,11 @@ function GitTree({
                 fill={isSel ? 'var(--blue)' : col}
                 stroke={isSel ? 'white' : 'var(--bg-primary)'}
                 strokeWidth={isSel ? 2 : 1.5} />
-              {phaseLabel && (
+              {isPhaseEnd && (
                 <text x={n.x} y={n.y - COMMIT_R - 3}
                   fontSize={7} fill="var(--text-muted)"
                   textAnchor="middle" fontFamily="var(--font-mono)">
-                  {phaseLabel}
+                  {c.phase}
                 </text>
               )}
               {c.shortSha && !isPhaseEnd && (
@@ -384,7 +400,7 @@ function GitTree({
           );
         })}
 
-        {/* "+" branch creation button */}
+        {/* "+" new branch button */}
         <g style={{ cursor: 'pointer' }}
           onMouseEnter={() => setShowBranchHint(true)}
           onMouseLeave={() => setShowBranchHint(false)}
@@ -394,35 +410,40 @@ function GitTree({
           <text x={plusX + 1} y={plusY + 13} fontSize={13} fill="var(--text-muted)"
             textAnchor="middle" fontWeight={300}>+</text>
         </g>
-
-        {/* Hover tooltip for commits */}
-        {tooltip && (() => {
-          const tipW = 224, tipH = 66;
-          let tx = tooltip.svgX + 10;
-          // keep within svg bounds
-          if (tx + tipW > svgW - 10) tx = tooltip.svgX - tipW - 10;
-          const ty = tooltip.svgY - tipH - 8;
-          return (
-            <foreignObject x={tx} y={ty} width={tipW} height={tipH} style={{ overflow: 'visible', pointerEvents: 'none' }}>
-              <div className={styles.gitTooltip}>
-                <div className={styles.gitTooltipSha}>{tooltip.commit.shortSha} · {tooltip.commit.branch}</div>
-                <div className={styles.gitTooltipMsg}>{tooltip.commit.subject.length > 58 ? tooltip.commit.subject.slice(0, 57) + '…' : tooltip.commit.subject}</div>
-                <div className={styles.gitTooltipCmd}>archon checkout {tooltip.commit.shortSha}</div>
-              </div>
-            </foreignObject>
-          );
-        })()}
-
-        {/* Branch hint tooltip */}
-        {showBranchHint && (
-          <foreignObject x={plusX - 160} y={plusY - 46} width={186} height={44} style={{ overflow: 'visible', pointerEvents: 'none' }}>
-            <div className={styles.gitTooltip}>
-              <div className={styles.gitTooltipMsg}>To create a new branch:</div>
-              <div className={styles.gitTooltipCmd}>archon branch &lt;name&gt;</div>
-            </div>
-          </foreignObject>
-        )}
       </svg>
+
+      {/* Commit tooltip — rendered OUTSIDE svg to avoid panel clipping */}
+      {tooltip && (
+        <div className={styles.gitTooltip} style={{
+          left: Math.min(tooltip.left + 10, containerW - 238),
+          top: Math.max(4, tooltip.top - 82),
+        }}>
+          <div className={styles.gitTooltipSha}>{tooltip.commit.shortSha} · {tooltip.commit.branch}</div>
+          <div className={styles.gitTooltipMsg}>
+            {tooltip.commit.subject.length > 62 ? tooltip.commit.subject.slice(0, 61) + '…' : tooltip.commit.subject}
+          </div>
+          <div className={styles.gitTooltipHint}>Run to move project to this state:</div>
+          <div className={styles.gitTooltipCmd}>archon checkout {tooltip.commit.shortSha}</div>
+        </div>
+      )}
+
+      {/* Full branch name tooltip */}
+      {branchTooltip && (
+        <div className={styles.gitTooltip} style={{ left: Math.max(4, branchTooltip.left), top: branchTooltip.top }}>
+          <div className={styles.gitTooltipCmd}>{branchTooltip.label}</div>
+        </div>
+      )}
+
+      {/* New branch hint */}
+      {showBranchHint && (
+        <div className={styles.gitTooltip} style={{
+          right: 12,
+          top: 4,
+        }}>
+          <div className={styles.gitTooltipHint}>To create a new branch:</div>
+          <div className={styles.gitTooltipCmd}>archon branch &lt;name&gt;</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -655,13 +676,11 @@ export default function ProofGraph() {
               })}
               {lo.e.map((e, i) => {
                 const k = `${e.from.id}->${e.to.id}`, hl = hlEdges.has(k);
-                const sg = e.from.d.file === e.to.d.file;
-                let x1: number, y1: number, x2: number, y2: number;
-                if (sg) { x1 = e.from.x + e.from.w / 2; y1 = e.from.y + e.from.h; x2 = e.to.x + e.to.w / 2; y2 = e.to.y; }
-                else { x1 = e.from.x + e.from.w; y1 = e.from.y + e.from.h / 2; x2 = e.to.x; y2 = e.to.y + e.to.h / 2; }
-                const dx = x2 - x1, dy = y2 - y1;
-                const cx = (x1 + x2) / 2 + (sg ? 30 : -dy * 0.1), cy = (y1 + y2) / 2 + (sg ? 0 : dx * 0.1);
-                return <path key={i} d={`M${x1},${y1} Q${cx},${cy} ${x2},${y2}`} fill="none"
+                // All edges: top-centre → top-centre with upward cubic bezier arc
+                const x1 = e.from.x + e.from.w / 2, y1 = e.from.y;
+                const x2 = e.to.x + e.to.w / 2, y2 = e.to.y;
+                const arc = Math.min(y1, y2) - 32;
+                return <path key={i} d={`M${x1},${y1} C${x1},${arc} ${x2},${arc} ${x2},${y2}`} fill="none"
                   stroke={hl ? 'var(--blue)' : e.blocked ? C_RED : 'var(--border)'}
                   strokeWidth={hl ? 2.5 : 1.2} strokeDasharray={e.blocked && !hl ? '5 3' : 'none'}
                   opacity={hl ? 1 : e.blocked ? 0.6 : 0.35}
