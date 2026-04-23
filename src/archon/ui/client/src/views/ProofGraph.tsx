@@ -572,13 +572,6 @@ export default function ProofGraph() {
     return { s, o, r };
   }, [lo]);
 
-  const hlEdges = useMemo(() => {
-    if (!lo || !selNode) return new Set<string>();
-    const s = new Set<string>();
-    for (const e of lo.e) { if (e.from.id === selNode || e.to.id === selNode) s.add(`${e.from.id}->${e.to.id}`); }
-    return s;
-  }, [lo, selNode]);
-
   const spark = useMemo(() => {
     if (!tlData || !selNode) return null;
     const d: number[] = [];
@@ -672,7 +665,6 @@ export default function ProofGraph() {
         <span className={styles.li}><span className={styles.ld} style={{ background: C_GREEN }} />Solved</span>
         <span className={styles.li}><span className={styles.ld} style={{ background: C_ORANGE }} />Sorry (changed)</span>
         <span className={styles.li}><span className={styles.ld} style={{ background: C_RED }} />Sorry (stuck)</span>
-        <span className={styles.li}><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke={C_RED} strokeDasharray="3 2" strokeWidth="1.5" /></svg>Blocked</span>
       </div>
 
       {/* ── Body: graph + sidebar, then git tree ── */}
@@ -696,42 +688,9 @@ export default function ProofGraph() {
                   {n.d.hasSorry ? <><rect x={n.x + n.w - 26} y={n.y + 3} width={20} height={12} rx={6} fill={n.c} opacity={0.15} /><text x={n.x + n.w - 16} y={n.y + 12} fontSize="8" fontWeight="700" fill={n.c} textAnchor="middle" fontFamily="var(--font-mono)">{n.d.sorryCount}s</text></> : <text x={n.x + n.w - 14} y={n.y + 13} fill={C_GREEN} fontSize="10" fontWeight="700">✓</text>}
                 </g>;
               })}
-              {lo?.e.map((e, i) => {
-                const k = `${e.from.id}->${e.to.id}`, hl = hlEdges.has(k);
-                // Both ends attach at the TOP-centre of their node. We lift a
-                // cubic bezier above both nodes; arc depth scales with horizontal
-                // distance so short hops stay subtle, long hops curve clearly.
-                //
-                // The arrow head is a small fixed DOWN-pointing triangle drawn
-                // manually at the target's top — never rotated from the path
-                // tangent. This keeps the visual invariant: "arrows always enter
-                // the target from directly above, head pointing down", regardless
-                // of where the source sits.
-                const x1 = e.from.x + e.from.w / 2, y1 = e.from.y;
-                const x2 = e.to.x + e.to.w / 2, y2 = e.to.y;
-                const headH = 7;                                    // height of the arrow head
-                const y2e = y2 - headH;                             // curve terminates at base of head
-                const dx = Math.abs(x2 - x1);
-                const arcDepth = Math.max(30, Math.min(160, dx * 0.45));
-                const arc = Math.min(y1, y2e) - arcDepth;
-                const d = `M${x1},${y1} C${x1},${arc} ${x2},${arc} ${x2},${y2e}`;
-
-                const color = hl ? 'var(--blue)' : e.blocked ? C_RED : 'var(--border)';
-                const opacity = hl ? 1 : e.blocked ? 0.6 : 0.4;
-                const strokeWidth = hl ? 2.5 : 1.2;
-
-                return (
-                  <g key={i} style={{ pointerEvents: 'none' }} opacity={opacity}>
-                    <path d={d} fill="none" stroke={color} strokeWidth={strokeWidth}
-                      strokeDasharray={e.blocked && !hl ? '5 3' : 'none'} />
-                    {/* Down-pointing triangle — apex touches the target's top edge. */}
-                    <polygon
-                      points={`${x2 - 3.5},${y2 - headH} ${x2 + 3.5},${y2 - headH} ${x2},${y2}`}
-                      fill={color}
-                    />
-                  </g>
-                );
-              })}
+              {/* Edges are intentionally not rendered — the dependency lines
+                  were hard to read and provided little value. The underlying
+                  edge data is still used by the sidebar for name lookups. */}
             </svg>
           </div>
 

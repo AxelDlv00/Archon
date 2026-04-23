@@ -13,6 +13,7 @@ spending tokens on decisions that actually need judgment.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import textwrap
@@ -52,6 +53,32 @@ def _read_json(path: Path) -> dict:
         return json.loads(path.read_text())
     except Exception:
         return {}
+
+
+def _fail_permission(path: Path, err: Exception | None) -> None:
+    """Stop init with a clear message when the project dir isn't writable."""
+    log.error(f"Cannot write to project directory: {path}")
+    if err is not None:
+        log.step(f"  {err}")
+    try:
+        stat = path.stat() if path.exists() else path.parent.stat()
+        try:
+            import pwd
+            owner = pwd.getpwuid(stat.st_uid).pw_name
+        except Exception:
+            owner = str(stat.st_uid)
+        log.step(f"  Owner: {owner}   Mode: {oct(stat.st_mode & 0o777)}")
+    except Exception:
+        pass
+    import getpass
+    user = getpass.getuser()
+    log.step("This usually means the directory was created by a different user")
+    log.step("(for example, cloned with sudo) or has restrictive permissions.")
+    log.step("")
+    log.step("Fix it with one of the following, then re-run 'archon init':")
+    log.step(f"  sudo chown -R {user}:{user} {path}")
+    log.step(f"  chmod u+w {path}")
+    raise typer.Exit(1)
 
 
 def _parse_stage(progress_md: Path) -> str:
@@ -257,7 +284,10 @@ def _step_state_dir(project_path: Path, state_dir: Path, fresh: bool) -> None:
         "task_results", "logs", "prompts",
         "proof-journal/sessions", "proof-journal/current_session",
     ):
-        (state_dir / subdir).mkdir(parents=True, exist_ok=True)
+        try:
+            (state_dir / subdir).mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            _fail_permission(state_dir / subdir, e)
     log.step("Created directory tree")
 
     template_dir = _data_path("archon-template")
@@ -723,13 +753,24 @@ def init(
             log.error("No project name entered")
             raise typer.Exit(1)
         resolved = Path.cwd() / name
-        resolved.mkdir(parents=True, exist_ok=True)
+        try:
+            resolved.mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            _fail_permission(resolved, e)
         log.success(f"Created project at {resolved}")
     else:
         resolved = Path(project_path).resolve()
         if not resolved.exists():
-            resolved.mkdir(parents=True, exist_ok=True)
+            try:
+                resolved.mkdir(parents=True, exist_ok=True)
+            except PermissionError as e:
+                _fail_permission(resolved, e)
             log.success(f"Created directory {resolved}")
+
+    # Fail fast if we can't write inside the project dir — otherwise the first
+    # attempt to create .archon/ bombs out mid-phase with a raw Python traceback.
+    if not os.access(resolved, os.W_OK):
+        _fail_permission(resolved, None)
 
     state_dir = resolved / ".archon"
     log.key_value({
