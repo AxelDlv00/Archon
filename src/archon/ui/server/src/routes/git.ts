@@ -43,6 +43,114 @@ function parseIter(subject: string): { iteration?: string; phase?: string; fileS
 
 const LOG_EVENTS = new Set(['thinking', 'text', 'tool_call', 'tool_result', 'session_end']);
 
+/** Locate the matching closing brace for `src[openIdx] === '{'`. */
+function matchBrace(src: string, openIdx: number): number {
+  if (src[openIdx] !== '{') return -1;
+  let depth = 1;
+  for (let i = openIdx + 1; i < src.length; i++) {
+    if (src[i] === '\\' && i + 1 < src.length) { i++; continue; }
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') { depth--; if (depth === 0) return i; }
+  }
+  return -1;
+}
+
+/**
+ * Strip `%` line comments from a LaTeX source. Honours `\%` as literal `%`.
+ * Preserves newlines so offsets stay useful for downstream parsing.
+ */
+function stripTexComments(src: string): string {
+  return src.split('\n').map(line => {
+    let out = '';
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] === '%' && (i === 0 || line[i - 1] !== '\\')) break;
+      out += line[i];
+    }
+    return out;
+  }).join('\n');
+}
+
+/**
+ * Parse `\newcommand`/`\renewcommand`/`\providecommand`/`\DeclareMathOperator`
+ * definitions out of a LaTeX source. Returns a KaTeX-compatible macro map
+ * keyed by the command (with leading backslash). Unknown / unparseable macros
+ * are skipped silently — a handful of exotic definitions shouldn't stop the
+ * rest from rendering.
+ */
+function parseMacros(src: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const source = stripTexComments(src);
+  const re = /\\(newcommand|renewcommand|providecommand|DeclareMathOperator)\*?\s*/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source)) !== null) {
+    const cmdType = m[1];
+    let i = re.lastIndex;
+
+    // Command name: `\foo` or `{\foo}`
+    let name: string | null = null;
+    if (source[i] === '{') {
+      const close = matchBrace(source, i);
+      if (close === -1) continue;
+      const inside = source.slice(i + 1, close).trim();
+      const nm = inside.match(/^\\([A-Za-z@]+)$/);
+      if (nm) name = nm[1];
+      i = close + 1;
+    } else if (source[i] === '\\') {
+      const nm = source.slice(i).match(/^\\([A-Za-z@]+)/);
+      if (!nm) continue;
+      name = nm[1];
+      i += nm[0].length;
+    }
+    if (!name) continue;
+
+    // Optional [N] arg count — KaTeX auto-detects #N, so we just skip it.
+    while (i < source.length && /\s/.test(source[i])) i++;
+    if (source[i] === '[') {
+      const close = source.indexOf(']', i);
+      if (close === -1) continue;
+      i = close + 1;
+    }
+    // Optional [default] for optional args — also skip.
+    while (i < source.length && /\s/.test(source[i])) i++;
+    if (source[i] === '[') {
+      const close = source.indexOf(']', i);
+      if (close === -1) continue;
+      i = close + 1;
+    }
+    while (i < source.length && /\s/.test(source[i])) i++;
+
+    // Body: balanced braces.
+    if (source[i] !== '{') continue;
+    const close = matchBrace(source, i);
+    if (close === -1) continue;
+    let body = source.slice(i + 1, close);
+    re.lastIndex = close + 1;
+
+    if (cmdType === 'DeclareMathOperator') {
+      body = `\\operatorname{${body}}`;
+    }
+
+    out[`\\${name}`] = body;
+  }
+  return out;
+}
+
+/** Read every .tex file in `blueprint/src/macros/` and merge macro definitions. */
+function loadBlueprintMacros(projectPath: string): Record<string, string> {
+  const macrosDir = path.join(projectPath, 'blueprint', 'src', 'macros');
+  if (!fs.existsSync(macrosDir) || !fs.statSync(macrosDir).isDirectory()) return {};
+  const merged: Record<string, string> = {};
+  for (const entry of fs.readdirSync(macrosDir)) {
+    if (!entry.endsWith('.tex')) continue;
+    const full = path.join(macrosDir, entry);
+    try {
+      const content = fs.readFileSync(full, 'utf-8');
+      Object.assign(merged, parseMacros(content));
+    } catch { /* unreadable .tex file, skip */ }
+  }
+  return merged;
+}
+
 function readPhaseLog(logsPath: string, iteration: string, phase: string): unknown[] {
   const logFile = path.join(logsPath, iteration, `${phase}.jsonl`);
   if (!fs.existsSync(logFile)) return [];
@@ -209,13 +317,14 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
       }
 
       const chaptersDir = path.join(projectPath, 'blueprint', 'src', 'chapters');
+      const macros = loadBlueprintMacros(projectPath);
 
       // 1. Try the per-file chapter first (e.g. Algebra/Foo.lean → Algebra_Foo.tex).
       const slug = file.replace(/\.lean$/, '').replace(/\//g, '_');
       const primary = path.join(chaptersDir, `${slug}.tex`);
       if (fs.existsSync(primary)) {
         const block = extractBlock(fs.readFileSync(primary, 'utf-8'));
-        if (block) return { tex: block };
+        if (block) return { tex: block, macros };
       }
 
       // 2. Fall back to any other chapter file — the same declaration may have
@@ -226,11 +335,11 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
           const full = path.join(chaptersDir, entry);
           if (!fs.statSync(full).isFile()) continue;
           const block = extractBlock(fs.readFileSync(full, 'utf-8'));
-          if (block) return { tex: block };
+          if (block) return { tex: block, macros };
         }
       }
 
-      return { tex: null };
+      return { tex: null, macros };
     }
   );
 }

@@ -249,9 +249,18 @@ function findMatchingBrace(src: string, openIdx: number): number {
   return -1;
 }
 
-function renderMath(tex: string, display: boolean): string {
+function renderMath(tex: string, display: boolean, macros?: Record<string, string>): string {
   try {
-    return katex.renderToString(tex, { displayMode: display, throwOnError: false, strict: 'ignore' });
+    return katex.renderToString(tex, {
+      displayMode: display,
+      throwOnError: false,
+      strict: 'ignore',
+      // Pass the user's custom macros (\newcommand / \DeclareMathOperator
+      // etc. from blueprint/src/macros/*.tex). KaTeX reads #1, #2, … from
+      // the body so we don't need to declare arity.
+      macros: macros ?? {},
+      trust: false,
+    });
   } catch {
     return `<code>${escapeHtml(`$${display ? '$' : ''}${tex}${display ? '$' : ''}$`)}</code>`;
   }
@@ -278,7 +287,7 @@ function paragraphise(nodes: Node[]): Node[][] {
   return paras.filter(p => p.length > 0);
 }
 
-function renderNode(n: Node, key: string): JSX.Element {
+function renderNode(n: Node, key: string, macros?: Record<string, string>): JSX.Element {
   if (n.type === 'text') {
     return <span key={key}>{n.value.replace(/\s+/g, ' ')}</span>;
   }
@@ -287,15 +296,15 @@ function renderNode(n: Node, key: string): JSX.Element {
       <span
         key={key}
         className={n.display ? styles.displayMath : styles.inlineMath}
-        dangerouslySetInnerHTML={{ __html: renderMath(n.value, n.display) }}
+        dangerouslySetInnerHTML={{ __html: renderMath(n.value, n.display, macros) }}
       />
     );
   }
   if (n.type === 'strong') {
-    return <strong key={key}>{n.children.map((c, i) => renderNode(c, `${key}-${i}`))}</strong>;
+    return <strong key={key}>{n.children.map((c, i) => renderNode(c, `${key}-${i}`, macros))}</strong>;
   }
   if (n.type === 'em') {
-    return <em key={key}>{n.children.map((c, i) => renderNode(c, `${key}-${i}`))}</em>;
+    return <em key={key}>{n.children.map((c, i) => renderNode(c, `${key}-${i}`, macros))}</em>;
   }
   if (n.type === 'code') {
     return <code key={key} className={styles.texttt}>{n.value}</code>;
@@ -327,22 +336,28 @@ function renderNode(n: Node, key: string): JSX.Element {
       </div>
       <div className={styles.envBody}>
         {paras.map((p, pi) => (
-          <p key={pi}>{p.map((c, ci) => renderNode(c, `p${pi}-${ci}`))}</p>
+          <p key={pi}>{p.map((c, ci) => renderNode(c, `p${pi}-${ci}`, macros))}</p>
         ))}
       </div>
     </div>
   );
 }
 
-export default function BlueprintRendered({ tex }: { tex: string }) {
+export default function BlueprintRendered({
+  tex,
+  macros,
+}: {
+  tex: string;
+  macros?: Record<string, string>;
+}) {
   const nodes = useMemo(() => parseInline(stripComments(tex)), [tex]);
   const paras = paragraphise(nodes);
   return (
     <div className={styles.root}>
       {paras.map((p, pi) => {
         // If a paragraph is a single env, render it directly; else wrap in <p>.
-        if (p.length === 1 && p[0].type === 'env') return renderNode(p[0], `top-${pi}`);
-        return <p key={pi}>{p.map((c, ci) => renderNode(c, `top-${pi}-${ci}`))}</p>;
+        if (p.length === 1 && p[0].type === 'env') return renderNode(p[0], `top-${pi}`, macros);
+        return <p key={pi}>{p.map((c, ci) => renderNode(c, `top-${pi}-${ci}`, macros))}</p>;
       })}
     </div>
   );

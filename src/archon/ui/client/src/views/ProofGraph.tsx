@@ -243,7 +243,7 @@ function BlueprintSection({ file, name }: { file: string; name: string }) {
       {open && (
         showSource
           ? <pre className={styles.texBlock}>{data.tex}</pre>
-          : <BlueprintRendered tex={data.tex} />
+          : <BlueprintRendered tex={data.tex} macros={data.macros} />
       )}
     </div>
   );
@@ -256,7 +256,10 @@ const COMMIT_R = 5;
 const PAD_X = 64; // space for branch labels on left
 const PAD_Y = 16;
 const MIN_SPACING = 52;
-const PLUS_GAP = 44; // space for "+" button on right
+const PLUS_GAP = 52;          // reserved px at the right edge for the "+" button
+const PLUS_BTN_W = 18;        // width of the "+" button itself
+const PLUS_OFFSET_MAX = PLUS_GAP - PLUS_BTN_W - 6; // leaves 6 px clear of the edge
+const TEXT_BLEED = 26;        // how far a centred SHA label can stick past its node
 
 interface CommitPos { commit: GitCommit; x: number; y: number; lane: number; }
 
@@ -273,19 +276,24 @@ function computeGitLayout(commits: GitCommit[], containerW: number) {
   }
 
   const N = ordered.length;
-  // Spread commits across the full container width; no max cap, so a tree
-  // with few commits fills the panel instead of clustering on the left.
-  const available = Math.max(0, containerW - PAD_X - PLUS_GAP);
+  // Reserve room for branch labels on the left (PAD_X), the "+" button on the
+  // right (PLUS_GAP), and half an SHA label's width on each side so the first
+  // and last commits' centred labels don't spill past the container edges.
+  const available = Math.max(0, containerW - PAD_X - PLUS_GAP - TEXT_BLEED);
   const spacing = N > 1
     ? Math.max(MIN_SPACING, available / (N - 1))
-    : Math.max(MIN_SPACING, available);  // single commit: centred-ish via initial offset
-  const singleX = N === 1 ? PAD_X + available / 2 : 0;
-  const svgW = Math.max(containerW, PAD_X + (N - 1) * spacing + PLUS_GAP + 20);
+    : Math.max(MIN_SPACING, available);
+  const firstX = PAD_X + TEXT_BLEED / 2;          // shift right so leftmost label fits
+  const singleX = N === 1 ? firstX + available / 2 : 0;
+  const lastNodeX = N === 1 ? singleX : firstX + (N - 1) * spacing;
+  // svgW must cover everything we draw: nodes, labels, and "+" button. Anything
+  // beyond containerW triggers horizontal scroll in .gitScroll.
+  const svgW = Math.max(containerW, lastNodeX + PLUS_GAP + 4);
   const svgH = PAD_Y * 2 + branchOrder.length * LANE_H;
 
   const nodes: CommitPos[] = ordered.map((c, i) => {
     const lane = branchOrder.indexOf(c.branch ?? 'main');
-    const x = N === 1 ? singleX : PAD_X + i * spacing;
+    const x = N === 1 ? singleX : firstX + i * spacing;
     return { commit: c, x, y: PAD_Y + lane * LANE_H, lane };
   });
   const shaToPos = new Map(nodes.map(n => [n.commit.sha, n]));
@@ -332,7 +340,12 @@ function GitTree({
   }
 
   const lastNode = nodes[nodes.length - 1];
-  const plusX = lastNode ? lastNode.x + Math.min(spacing * 0.6, 60) : PAD_X + 20;
+  // Keep the "+" button fully inside the PLUS_GAP reserve — otherwise it ends
+  // up past the container's right edge or gets cut when the SVG is narrower
+  // than the drawn bounds.
+  const plusX = lastNode
+    ? lastNode.x + Math.min(spacing * 0.4, PLUS_OFFSET_MAX)
+    : PAD_X + 20;
   const plusY = PAD_Y - 8;
 
   // Convert SVG-local coordinates to container-relative for tooltip placement

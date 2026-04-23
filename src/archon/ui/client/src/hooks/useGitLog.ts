@@ -29,6 +29,12 @@ export interface PhaseLogResponse {
 
 export interface BlueprintResponse {
   tex: string | null;
+  /**
+   * KaTeX-compatible macro map, parsed from blueprint/src/macros/*.tex —
+   * keys are the full command (e.g. "\\R") and values are the expansion
+   * (e.g. "\\mathbb{R}"). Empty object when the project has no macros/ dir.
+   */
+  macros?: Record<string, string>;
 }
 
 export function useGitLog() {
