@@ -298,9 +298,11 @@ function GitTree({
   onSelect: (c: GitCommit) => void;
   containerW: number;
 }) {
+  // All hooks MUST run on every render (no hooks after the commits.length guard).
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [branchTooltip, setBranchTooltip] = useState<{ label: string; left: number; top: number } | null>(null);
   const [showBranchHint, setShowBranchHint] = useState(false);
+  const [branchHintPos, setBranchHintPos] = useState<{ left: number; top: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { ordered, nodes, branchOrder, shaToPos, svgW, svgH, spacing } = useMemo(
@@ -319,7 +321,6 @@ function GitTree({
   const lastNode = nodes[nodes.length - 1];
   const plusX = lastNode ? lastNode.x + Math.min(spacing * 0.6, 60) : PAD_X + 20;
   const plusY = PAD_Y - 8;
-  const [branchHintPos, setBranchHintPos] = useState<{ left: number; top: number } | null>(null);
 
   // Convert SVG-local coordinates to container-relative for tooltip placement
   function svgToContainer(svgX: number, svgY: number) {
@@ -680,11 +681,6 @@ export default function ProofGraph() {
           {/* Graph canvas */}
           <div className={styles.gc} ref={cRef}>
             <svg ref={svgRef} className={styles.svg} viewBox={`${vb[0]} ${vb[1]} ${vb[2]} ${vb[3]}`} preserveAspectRatio="xMidYMid meet" width="100%" height="100%">
-              <defs>
-                <marker id="ga" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0,10 4,0 8" fill="var(--border)" /></marker>
-                <marker id="gb" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0,10 4,0 8" fill={C_RED} /></marker>
-                <marker id="ghl" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0,10 4,0 8" fill="var(--blue)" /></marker>
-              </defs>
               {lo?.g.map(g => <g key={g.file}>
                 <rect x={g.x} y={g.y} width={g.w} height={g.h} rx={10} ry={10} fill={BG[g.ci]} stroke={BS[g.ci]} strokeWidth={1.5} />
                 <text x={g.x + 8} y={g.y + 14} fontSize="10" fontWeight="600" fill="var(--text-muted)" fontFamily="var(--font-mono)">{g.label}</text>
@@ -702,25 +698,39 @@ export default function ProofGraph() {
               })}
               {lo?.e.map((e, i) => {
                 const k = `${e.from.id}->${e.to.id}`, hl = hlEdges.has(k);
-                // Edges always attach at the TOP-centre of both nodes. We lift a
-                // cubic bezier above them; the arc depth scales with horizontal
-                // distance so short hops stay subtle while long ones curve clearly.
-                // The final segment approaches the target node vertically from
-                // above so the arrowhead (orient="auto") points straight down into it.
+                // Both ends attach at the TOP-centre of their node. We lift a
+                // cubic bezier above both nodes; arc depth scales with horizontal
+                // distance so short hops stay subtle, long hops curve clearly.
+                //
+                // The arrow head is a small fixed DOWN-pointing triangle drawn
+                // manually at the target's top — never rotated from the path
+                // tangent. This keeps the visual invariant: "arrows always enter
+                // the target from directly above, head pointing down", regardless
+                // of where the source sits.
                 const x1 = e.from.x + e.from.w / 2, y1 = e.from.y;
                 const x2 = e.to.x + e.to.w / 2, y2 = e.to.y;
-                const gap = 10;                                 // leave room for the arrow head
-                const y2e = y2 - gap;                           // end just above the target node
+                const headH = 7;                                    // height of the arrow head
+                const y2e = y2 - headH;                             // curve terminates at base of head
                 const dx = Math.abs(x2 - x1);
                 const arcDepth = Math.max(30, Math.min(160, dx * 0.45));
                 const arc = Math.min(y1, y2e) - arcDepth;
                 const d = `M${x1},${y1} C${x1},${arc} ${x2},${arc} ${x2},${y2e}`;
-                return <path key={i} d={d} fill="none"
-                  stroke={hl ? 'var(--blue)' : e.blocked ? C_RED : 'var(--border)'}
-                  strokeWidth={hl ? 2.5 : 1.2} strokeDasharray={e.blocked && !hl ? '5 3' : 'none'}
-                  opacity={hl ? 1 : e.blocked ? 0.6 : 0.4}
-                  markerEnd={hl ? 'url(#ghl)' : e.blocked ? 'url(#gb)' : 'url(#ga)'}
-                  style={{ pointerEvents: 'none' }} />;
+
+                const color = hl ? 'var(--blue)' : e.blocked ? C_RED : 'var(--border)';
+                const opacity = hl ? 1 : e.blocked ? 0.6 : 0.4;
+                const strokeWidth = hl ? 2.5 : 1.2;
+
+                return (
+                  <g key={i} style={{ pointerEvents: 'none' }} opacity={opacity}>
+                    <path d={d} fill="none" stroke={color} strokeWidth={strokeWidth}
+                      strokeDasharray={e.blocked && !hl ? '5 3' : 'none'} />
+                    {/* Down-pointing triangle — apex touches the target's top edge. */}
+                    <polygon
+                      points={`${x2 - 3.5},${y2 - headH} ${x2 + 3.5},${y2 - headH} ${x2},${y2}`}
+                      fill={color}
+                    />
+                  </g>
+                );
               })}
             </svg>
           </div>
