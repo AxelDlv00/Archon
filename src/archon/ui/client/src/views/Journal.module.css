@@ -15,6 +15,7 @@
 .commitBanner .commitSha { font-weight: 700; color: var(--text-primary); }
 .commitBanner .commitBranch { color: var(--blue); font-weight: 600; }
 .commitBanner .commitSubject { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; font-family: var(--font-sans); }
+.commitBanner .commitSessionHint { color: var(--text-muted); font-size: 10px; font-family: var(--font-mono); border-left: 1px solid var(--border); padding-left: 8px; }
 .empty { color: var(--text-muted); font-size: 13px; padding: 32px 0; }
 .empty code { background: var(--bg-tertiary); padding: 2px 6px; border-radius: 3px; font-size: 12px; }
 

@@ -3,11 +3,40 @@ import fs from 'fs';
 import path from 'path';
 import type { FastifyInstance } from 'fastify';
 import { parseJsonl, readFileOr } from '../utils.js';
-import { mapIterToCommit } from '../utils/innerGit.js';
+import { mapIterToPhaseCommits, type InnerCommit, type IterPhaseCommits } from '../utils/innerGit.js';
 import type { ProjectPaths } from './project.js';
 
-interface LogFileEntry { name: string; path: string; size: number; modified: string; role?: string }
+interface LogFileEntry {
+  name: string;
+  path: string;
+  size: number;
+  modified: string;
+  role?: string;
+  /** Commit for this specific file's phase (plan/refactor/prover/review). */
+  commit?: InnerCommit;
+}
 interface LogGroup { id: string; files: LogFileEntry[]; meta?: Record<string, unknown> }
+
+/** Pick the commit that "belongs" to a file, given its role and prover slug. */
+function commitForFile(
+  phaseCommits: IterPhaseCommits | undefined,
+  role: string | undefined,
+  fileName: string,
+): InnerCommit | undefined {
+  if (!phaseCommits) return undefined;
+  if (!role) return phaseCommits.latest;
+  // Plan and refactor logs cover both their own jsonl and the archived .md.
+  if (role === 'plan' || role === 'plan-post-refactor') return phaseCommits.plan;
+  if (role === 'refactor' || role === 'refactor-manual'
+      || role === 'refactor-directive' || role === 'refactor-report') return phaseCommits.refactor;
+  if (role === 'review') return phaseCommits.review;
+  if (role === 'finalize') return phaseCommits.finalize;
+  if (role === 'prover') {
+    const slug = fileName.replace(/\.jsonl$/, '');
+    return phaseCommits.prover[slug] ?? phaseCommits.latest;
+  }
+  return phaseCommits.latest;
+}
 
 function resolveLogPath(logsPath: string, logPath: string): string | null {
   const normalized = path.normalize(logPath).replace(/^(\.\.[/\\])+/, '');
@@ -26,7 +55,9 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
   fastify.get('/api/logs', async () => {
     if (!fs.existsSync(logsPath)) return { flat: [], groups: [] };
 
-    const commitByIter = mapIterToCommit(gitDir, projectPath);
+    const phaseByIter = mapIterToPhaseCommits(gitDir, projectPath);
+    const commitByIter = new Map<string, InnerCommit>();
+    for (const [iter, ph] of phaseByIter) if (ph.latest) commitByIter.set(iter, ph.latest);
 
     const flat: LogFileEntry[] = fs.readdirSync(logsPath)
       .filter(f => f.endsWith('.jsonl') && fs.statSync(path.join(logsPath, f)).isFile())
@@ -44,6 +75,7 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
     for (const dir of iterDirs) {
       const dirPath = path.join(logsPath, dir);
       const files: LogFileEntry[] = [];
+      const phaseCommits = phaseByIter.get(dir);
 
       // Standard JSONL logs at the iteration root.
       for (const f of fs.readdirSync(dirPath).filter(f => f.endsWith('.jsonl') && !f.endsWith('.raw.jsonl') && f !== 'provers-combined.jsonl')) {
@@ -51,7 +83,10 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
         if (!fs.statSync(full).isFile()) continue;
         const role = f.replace('.jsonl', '');
         const stat = fs.statSync(full);
-        files.push({ name: f, path: `${dir}/${f}`, size: stat.size, modified: stat.mtime.toISOString(), role });
+        files.push({
+          name: f, path: `${dir}/${f}`, size: stat.size, modified: stat.mtime.toISOString(), role,
+          commit: commitForFile(phaseCommits, role, f),
+        });
       }
 
       // Refactor artifacts (archived markdown).
@@ -59,22 +94,27 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
         const full = path.join(dirPath, artifact);
         if (!fs.existsSync(full) || !fs.statSync(full).isFile()) continue;
         const stat = fs.statSync(full);
+        const role = artifact.replace('.md', '');  // "refactor-directive" | "refactor-report"
         files.push({
           name: artifact,
           path: `${dir}/${artifact}`,
           size: stat.size,
           modified: stat.mtime.toISOString(),
-          role: artifact.replace('.md', ''),  // "refactor-directive" | "refactor-report"
+          role,
+          commit: commitForFile(phaseCommits, role, artifact),
         });
       }
 
-      // Parallel prover JSONL logs.
+      // Parallel prover JSONL logs — each gets the commit for its specific file slug.
       const proversDir = path.join(dirPath, 'provers');
       if (fs.existsSync(proversDir) && fs.statSync(proversDir).isDirectory()) {
         for (const f of fs.readdirSync(proversDir).filter(f => f.endsWith('.jsonl') && !f.endsWith('.raw.jsonl')).sort()) {
           const full = path.join(proversDir, f);
           const stat = fs.statSync(full);
-          files.push({ name: f, path: `${dir}/provers/${f}`, size: stat.size, modified: stat.mtime.toISOString(), role: 'prover' });
+          files.push({
+            name: f, path: `${dir}/provers/${f}`, size: stat.size, modified: stat.mtime.toISOString(), role: 'prover',
+            commit: commitForFile(phaseCommits, 'prover', f),
+          });
         }
       }
 
@@ -82,7 +122,8 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
       const metaFile = path.join(dirPath, 'meta.json');
       try { meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8')); } catch { /* skip */ }
 
-      // Attach the inner git commit for this iteration (if present).
+      // Attach the inner git commit for this iteration (if present) — this is
+      // the latest commit of the iter, used for the group-level badge.
       const commit = commitByIter.get(dir);
       if (commit) meta = { ...(meta ?? {}), commit };
 
@@ -96,9 +137,11 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
     // timestamp, and attach the flat file to that iter. Falls back to mtime-window
     // correlation when no inner git exists.
     if (groups.length && flat.length) {
-      const refactorCommits = Array.from(commitByIter.entries())
-        .filter(([, c]) => /archon\[\d+\/refactor/.test(c.subject))
-        .map(([iterId, c]) => ({ iterId, ts: new Date(c.date).getTime() }))
+      // Use phase-specific refactor commits (not just the iter's latest, which
+      // might be a review commit made after the refactor).
+      const refactorCommits = Array.from(phaseByIter.entries())
+        .filter(([, ph]) => !!ph.refactor)
+        .map(([iterId, ph]) => ({ iterId, ts: new Date(ph.refactor!.date).getTime() }))
         .filter(x => Number.isFinite(x.ts));
 
       const iterWindows = groups.map(g => {
@@ -166,6 +209,7 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
               size: f.size,
               modified: f.modified,
               role: 'refactor-manual',
+              commit: commitForFile(phaseByIter.get(targetIterId), 'refactor-manual', f.name),
             });
             flat.splice(i, 1);
           }

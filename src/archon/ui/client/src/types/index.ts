@@ -23,7 +23,15 @@ export interface LogEntry {
   summary?: string;
 }
 
-export interface LogFile { name: string; path: string; size: number; modified: string; role?: string }
+export interface LogFile {
+  name: string;
+  path: string;
+  size: number;
+  modified: string;
+  role?: string;
+  /** Commit associated with this specific file/phase. */
+  commit?: { sha: string; shortSha: string; subject: string; date: string };
+}
 
 export interface LogGroup {
   id: string;

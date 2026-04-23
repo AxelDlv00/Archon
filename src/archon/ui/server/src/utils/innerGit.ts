@@ -54,6 +54,61 @@ export function mapIterToCommit(gitDir: string, projectPath: string): Map<string
   return out;
 }
 
+export interface IterPhaseCommits {
+  /** Catch-all: the most recent commit for the iteration (used for iter-group badge). */
+  latest?: InnerCommit;
+  plan?: InnerCommit;
+  refactor?: InnerCommit;
+  review?: InnerCommit;
+  finalize?: InnerCommit;
+  /** Prover commits keyed by fileSlug (e.g. "Foo_Bar" for "Foo/Bar.lean"). */
+  prover: Record<string, InnerCommit>;
+}
+
+/**
+ * Map iteration id (iter-NNN) → every phase-specific commit on that iteration.
+ * The subject format is `archon[N/phase]` or `archon[N/phase/fileSlug]`. Newest
+ * first in topo-order; within an iteration we keep the first (= latest) match
+ * per phase/slug.
+ */
+export function mapIterToPhaseCommits(
+  gitDir: string,
+  projectPath: string,
+): Map<string, IterPhaseCommits> {
+  const out = new Map<string, IterPhaseCommits>();
+  if (!hasInnerGit(gitDir)) return out;
+  const { stdout, ok } = run(gitDir, projectPath, [
+    'log', '--all', '--topo-order',
+    '--format=%H%x01%h%x01%s%x01%ai',
+  ]);
+  if (!ok) return out;
+  for (const line of stdout.split('\n')) {
+    if (!line.trim()) continue;
+    const [sha, shortSha, subject, date] = line.split('\x01');
+    const m = subject?.match(/archon\[(\d+)\/([^/\]]+)(?:\/([^\]]+))?\]/);
+    if (!m) continue;
+    const iterId = `iter-${String(parseInt(m[1], 10)).padStart(3, '0')}`;
+    const phase = m[2];
+    const fileSlug = m[3];
+    const commit: InnerCommit = { sha, shortSha, subject, date };
+    let entry = out.get(iterId);
+    if (!entry) { entry = { prover: {} }; out.set(iterId, entry); }
+    if (!entry.latest) entry.latest = commit;
+    if (phase === 'prover' && fileSlug) {
+      if (!entry.prover[fileSlug]) entry.prover[fileSlug] = commit;
+    } else if (phase === 'plan' && !entry.plan) {
+      entry.plan = commit;
+    } else if (phase === 'refactor' && !entry.refactor) {
+      entry.refactor = commit;
+    } else if (phase === 'review' && !entry.review) {
+      entry.review = commit;
+    } else if (phase === 'finalize' && !entry.finalize) {
+      entry.finalize = commit;
+    }
+  }
+  return out;
+}
+
 /** List all .lean files in the tree at a given commit. */
 export function lsLeanFilesAtCommit(gitDir: string, projectPath: string, sha: string): string[] {
   if (!hasInnerGit(gitDir)) return [];

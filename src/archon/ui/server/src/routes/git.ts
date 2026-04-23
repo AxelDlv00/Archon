@@ -191,7 +191,21 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
         const endTag = `\\end{${envName}}`;
         const endIdx = texContent.indexOf(endTag, bestStart);
         if (endIdx < 0) return null;
-        return texContent.slice(bestStart, endIdx + endTag.length);
+        let blockEnd = endIdx + endTag.length;
+
+        // If a \begin{proof}...\end{proof} immediately follows (only whitespace
+        // between), include it — that's the informal proof sketch the plan
+        // agent writes and the prover uses as the source of truth.
+        const afterStmt = texContent.slice(blockEnd);
+        const proofMatch = afterStmt.match(/^\s*\\begin\{proof\}/);
+        if (proofMatch) {
+          const proofStart = blockEnd + (proofMatch[0].length - '\\begin{proof}'.length);
+          const proofEndTag = '\\end{proof}';
+          const proofEndIdx = texContent.indexOf(proofEndTag, proofStart);
+          if (proofEndIdx >= 0) blockEnd = proofEndIdx + proofEndTag.length;
+        }
+
+        return texContent.slice(bestStart, blockEnd);
       }
 
       const chaptersDir = path.join(projectPath, 'blueprint', 'src', 'chapters');

@@ -243,7 +243,6 @@ const COMMIT_R = 5;
 const PAD_X = 64; // space for branch labels on left
 const PAD_Y = 16;
 const MIN_SPACING = 52;
-const MAX_SPACING = 110;
 const PLUS_GAP = 44; // space for "+" button on right
 
 interface CommitPos { commit: GitCommit; x: number; y: number; lane: number; }
@@ -261,15 +260,20 @@ function computeGitLayout(commits: GitCommit[], containerW: number) {
   }
 
   const N = ordered.length;
+  // Spread commits across the full container width; no max cap, so a tree
+  // with few commits fills the panel instead of clustering on the left.
+  const available = Math.max(0, containerW - PAD_X - PLUS_GAP);
   const spacing = N > 1
-    ? Math.min(MAX_SPACING, Math.max(MIN_SPACING, (containerW - PAD_X - PLUS_GAP) / (N - 1)))
-    : MAX_SPACING;
+    ? Math.max(MIN_SPACING, available / (N - 1))
+    : Math.max(MIN_SPACING, available);  // single commit: centred-ish via initial offset
+  const singleX = N === 1 ? PAD_X + available / 2 : 0;
   const svgW = Math.max(containerW, PAD_X + (N - 1) * spacing + PLUS_GAP + 20);
   const svgH = PAD_Y * 2 + branchOrder.length * LANE_H;
 
   const nodes: CommitPos[] = ordered.map((c, i) => {
     const lane = branchOrder.indexOf(c.branch ?? 'main');
-    return { commit: c, x: PAD_X + i * spacing, y: PAD_Y + lane * LANE_H, lane };
+    const x = N === 1 ? singleX : PAD_X + i * spacing;
+    return { commit: c, x, y: PAD_Y + lane * LANE_H, lane };
   });
   const shaToPos = new Map(nodes.map(n => [n.commit.sha, n]));
 
@@ -313,8 +317,9 @@ function GitTree({
   }
 
   const lastNode = nodes[nodes.length - 1];
-  const plusX = lastNode ? lastNode.x + spacing * 0.6 : PAD_X + 20;
+  const plusX = lastNode ? lastNode.x + Math.min(spacing * 0.6, 60) : PAD_X + 20;
   const plusY = PAD_Y - 8;
+  const [branchHintPos, setBranchHintPos] = useState<{ left: number; top: number } | null>(null);
 
   // Convert SVG-local coordinates to container-relative for tooltip placement
   function svgToContainer(svgX: number, svgY: number) {
@@ -413,7 +418,11 @@ function GitTree({
 
         {/* "+" new branch button */}
         <g style={{ cursor: 'pointer' }}
-          onMouseEnter={() => setShowBranchHint(true)}
+          onMouseEnter={() => {
+            const pos = svgToContainer(plusX + 10, plusY + 20);
+            setBranchHintPos(pos);
+            setShowBranchHint(true);
+          }}
           onMouseLeave={() => setShowBranchHint(false)}
         >
           <rect x={plusX - 8} y={plusY} width={18} height={18} rx={4}
@@ -445,11 +454,11 @@ function GitTree({
         </div>
       )}
 
-      {/* New branch hint */}
-      {showBranchHint && (
+      {/* New branch hint — positioned right next to the "+" button */}
+      {showBranchHint && branchHintPos && (
         <div className={styles.gitTooltip} style={{
-          right: 12,
-          top: 4,
+          left: Math.min(Math.max(4, branchHintPos.left), containerW - 200),
+          top: branchHintPos.top,
         }}>
           <div className={styles.gitTooltipHint}>To create a new branch:</div>
           <div className={styles.gitTooltipCmd}>archon branch &lt;name&gt;</div>
@@ -523,8 +532,12 @@ export default function ProofGraph() {
 
   const { data: snapData, isFetching: snapLoading } = useProofGraphSnapshot(selIter);
 
+  // While snapData is being fetched, fall back to declData so the graph panel
+  // never goes blank when the user clicks a commit. React-query's placeholderData
+  // already keeps the previous snapshot around, but the first selection has no
+  // previous value.
   const activeData: DeclarationsResponse | undefined = selIter
-    ? (snapData ?? undefined)
+    ? (snapData ?? declData)
     : declData;
 
   const changedSet = useMemo(() => {
@@ -621,7 +634,9 @@ export default function ProofGraph() {
 
   if (isLoading) return <div className={styles.loading}>Loading…</div>;
   if (!declData?.declarations?.length) return <div className={styles.page}><div className={styles.empty}><h3>No declarations</h3><p>No .lean files with declarations found</p></div></div>;
-  if (!lo) return null;
+  // `lo` may briefly be null (first paint after clicking a commit before the
+  // snapshot arrives). We still render the page frame so the git tree and
+  // sidebar stay visible; the canvas shows a subtle loading message instead.
 
   return (
     <div className={styles.page}>
@@ -666,15 +681,15 @@ export default function ProofGraph() {
           <div className={styles.gc} ref={cRef}>
             <svg ref={svgRef} className={styles.svg} viewBox={`${vb[0]} ${vb[1]} ${vb[2]} ${vb[3]}`} preserveAspectRatio="xMidYMid meet" width="100%" height="100%">
               <defs>
-                <marker id="ga" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto"><polygon points="0 0,6 2,0 4" fill="var(--border)" /></marker>
-                <marker id="gb" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto"><polygon points="0 0,6 2,0 4" fill={C_RED} /></marker>
-                <marker id="ghl" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto"><polygon points="0 0,6 2,0 4" fill="var(--blue)" /></marker>
+                <marker id="ga" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0,10 4,0 8" fill="var(--border)" /></marker>
+                <marker id="gb" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0,10 4,0 8" fill={C_RED} /></marker>
+                <marker id="ghl" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0,10 4,0 8" fill="var(--blue)" /></marker>
               </defs>
-              {lo.g.map(g => <g key={g.file}>
+              {lo?.g.map(g => <g key={g.file}>
                 <rect x={g.x} y={g.y} width={g.w} height={g.h} rx={10} ry={10} fill={BG[g.ci]} stroke={BS[g.ci]} strokeWidth={1.5} />
                 <text x={g.x + 8} y={g.y + 14} fontSize="10" fontWeight="600" fill="var(--text-muted)" fontFamily="var(--font-mono)">{g.label}</text>
               </g>)}
-              {lo.n.map(n => {
+              {lo?.n.map(n => {
                 const sel = n.id === selNode, att = n.d.totalAttempts ?? 0, ms = n.d.latestMilestoneStatus;
                 return <g key={n.id} data-node="1" onClick={() => clickNode(n.id)} style={{ cursor: 'pointer' }}>
                   {att > 3 && <rect x={n.x - 2} y={n.y - 2} width={n.w + 4} height={n.h + 4} rx={8} fill="none" stroke={n.c} strokeWidth={1.5} opacity={0.3} />}
@@ -685,16 +700,25 @@ export default function ProofGraph() {
                   {n.d.hasSorry ? <><rect x={n.x + n.w - 26} y={n.y + 3} width={20} height={12} rx={6} fill={n.c} opacity={0.15} /><text x={n.x + n.w - 16} y={n.y + 12} fontSize="8" fontWeight="700" fill={n.c} textAnchor="middle" fontFamily="var(--font-mono)">{n.d.sorryCount}s</text></> : <text x={n.x + n.w - 14} y={n.y + 13} fill={C_GREEN} fontSize="10" fontWeight="700">✓</text>}
                 </g>;
               })}
-              {lo.e.map((e, i) => {
+              {lo?.e.map((e, i) => {
                 const k = `${e.from.id}->${e.to.id}`, hl = hlEdges.has(k);
-                // All edges: top-centre → top-centre with upward cubic bezier arc
+                // Edges always attach at the TOP-centre of both nodes. We lift a
+                // cubic bezier above them; the arc depth scales with horizontal
+                // distance so short hops stay subtle while long ones curve clearly.
+                // The final segment approaches the target node vertically from
+                // above so the arrowhead (orient="auto") points straight down into it.
                 const x1 = e.from.x + e.from.w / 2, y1 = e.from.y;
                 const x2 = e.to.x + e.to.w / 2, y2 = e.to.y;
-                const arc = Math.min(y1, y2) - 32;
-                return <path key={i} d={`M${x1},${y1} C${x1},${arc} ${x2},${arc} ${x2},${y2}`} fill="none"
+                const gap = 10;                                 // leave room for the arrow head
+                const y2e = y2 - gap;                           // end just above the target node
+                const dx = Math.abs(x2 - x1);
+                const arcDepth = Math.max(30, Math.min(160, dx * 0.45));
+                const arc = Math.min(y1, y2e) - arcDepth;
+                const d = `M${x1},${y1} C${x1},${arc} ${x2},${arc} ${x2},${y2e}`;
+                return <path key={i} d={d} fill="none"
                   stroke={hl ? 'var(--blue)' : e.blocked ? C_RED : 'var(--border)'}
                   strokeWidth={hl ? 2.5 : 1.2} strokeDasharray={e.blocked && !hl ? '5 3' : 'none'}
-                  opacity={hl ? 1 : e.blocked ? 0.6 : 0.35}
+                  opacity={hl ? 1 : e.blocked ? 0.6 : 0.4}
                   markerEnd={hl ? 'url(#ghl)' : e.blocked ? 'url(#gb)' : 'url(#ga)'}
                   style={{ pointerEvents: 'none' }} />;
               })}

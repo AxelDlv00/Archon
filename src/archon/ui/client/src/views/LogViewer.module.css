@@ -84,6 +84,17 @@
 .fileStatus { font-size: 8px; flex-shrink: 0; }
 .fileRole { font-size: 10px; font-weight: 500; color: var(--text-muted); text-transform: capitalize; min-width: 40px; }
 .fileName { font-family: var(--font-mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fileCommit {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
 
 .emptyHint { padding: 16px; color: var(--text-muted); font-size: 12px; text-align: center; }
 
@@ -104,6 +115,29 @@
 }
 .backBtn:hover { background: rgba(3,102,214,0.12); }
 .selectedLabel { font-weight: 500; font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+.selectedCommit {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--blue);
+  padding: 2px 6px;
+  border-left: 2px solid var(--blue);
+  background: rgba(3, 102, 214, 0.06);
+  border-radius: 0 3px 3px 0;
+  max-width: 50%;
+  overflow: hidden;
+}
+.selectedCommitSubject {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .roleTag {
   font-size: 11px; font-weight: 600; text-transform: uppercase;
   padding: 1px 6px; border-radius: 3px;

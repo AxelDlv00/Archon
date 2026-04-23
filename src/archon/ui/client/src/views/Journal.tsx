@@ -3,7 +3,7 @@ import {
   useJournalSessions, useJournalMilestones, useJournalSummary,
   useJournalRecommendations, useJournalAllMilestones,
 } from '../hooks/useApi';
-import { useGitHead } from '../hooks/useGitLog';
+import { useGitHead, useGitLog } from '../hooks/useGitLog';
 import { aggregateTargets } from '../utils/aggregate';
 import { STATUS_COLORS } from '../utils/constants';
 import MilestoneCard from '../components/MilestoneCard';
@@ -27,7 +27,20 @@ export default function Journal() {
   // --- Targets tab data (cross-session) ---
   const { data: allMilestoneData } = useJournalAllMilestones();
   const { data: headData } = useGitHead();
+  const { data: gitData } = useGitLog();
   const head = headData?.commit;
+
+  // Map the selected session_NNN to its iter-NNN review commit. Sessions are
+  // produced by the review agent once per iteration, so the numeric suffix
+  // lines up with the iter index.
+  const sessionCommit = useMemo(() => {
+    if (!currentSession || !gitData?.commits) return undefined;
+    const match = currentSession.match(/session_(\d+)/);
+    if (!match) return undefined;
+    const iterId = `iter-${String(parseInt(match[1], 10)).padStart(3, '0')}`;
+    return gitData.commits.find(c => c.iteration === iterId && c.phase === 'review')
+      ?? gitData.commits.find(c => c.iteration === iterId);
+  }, [currentSession, gitData]);
 
   const allAggregated = useMemo(() => {
     if (!allMilestoneData?.length) return [];
@@ -48,13 +61,23 @@ export default function Journal() {
     );
   }
 
+  // Show the session-specific commit when on the Milestones tab (it reflects the
+  // review commit behind the currently inspected session). Otherwise fall back to
+  // the repo HEAD so users still see where "now" is.
+  const bannerCommit = tab === 'milestones' && sessionCommit
+    ? { shortSha: sessionCommit.shortSha, branch: sessionCommit.branch ?? 'main', subject: sessionCommit.subject }
+    : head;
+
   return (
     <div className={styles.root}>
-      {head && (
-        <div className={styles.commitBanner} title={head.subject}>
-          <span className={styles.commitSha}>{head.shortSha}</span>
-          <span className={styles.commitBranch}>{head.branch}</span>
-          <span className={styles.commitSubject}>{head.subject}</span>
+      {bannerCommit && (
+        <div className={styles.commitBanner} title={bannerCommit.subject}>
+          <span className={styles.commitSha}>{bannerCommit.shortSha}</span>
+          <span className={styles.commitBranch}>{bannerCommit.branch}</span>
+          <span className={styles.commitSubject}>{bannerCommit.subject}</span>
+          {tab === 'milestones' && sessionCommit && (
+            <span className={styles.commitSessionHint}>session {currentSession.replace('session_', '#')}</span>
+          )}
         </div>
       )}
       {/* Top-level tabs: Milestones (per-session) | Targets (global) */}

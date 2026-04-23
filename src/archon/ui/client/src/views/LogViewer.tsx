@@ -146,7 +146,7 @@ function IterGroup({ group, selectedFile, onSelect, isLatest, nowMs }: {
                 key={f.path}
                 className={`${styles.fileItem} ${f.path === selectedFile ? styles.fileItemActive : ''}`}
                 onClick={() => onSelect(f.path)}
-                title={f.name}
+                title={f.commit ? `${f.name}\n${f.commit.shortSha} · ${f.commit.subject}` : f.name}
               >
                 {isProver && (
                   <span className={styles.fileStatus} style={{
@@ -156,6 +156,7 @@ function IterGroup({ group, selectedFile, onSelect, isLatest, nowMs }: {
                 {isArtifact && <span className={styles.fileStatus} style={{ color: '#e36209' }}>◆</span>}
                 {!isProver && <span className={styles.fileRole}>{f.role}</span>}
                 <span className={styles.fileName}>{isProver ? displayName : ''}</span>
+                {f.commit && <span className={styles.fileCommit}>{f.commit.shortSha}</span>}
               </div>
             );
           })}
@@ -287,6 +288,15 @@ export default function LogViewer() {
     return '';
   }, [logsData, selectedFile]);
 
+  const selectedCommit = useMemo(() => {
+    if (!logsData || !selectedFile) return undefined;
+    for (const g of logsData.groups) {
+      const f = g.files.find(f => f.path === selectedFile);
+      if (f?.commit) return f.commit;
+    }
+    return undefined;
+  }, [logsData, selectedFile]);
+
   useEffect(() => {
     if (!logsData || selectedFile || initialSelectedFile) return;
     if (logsData.groups.length > 0) {
@@ -374,6 +384,15 @@ export default function LogViewer() {
             </span>
           )}
           <span className={styles.selectedLabel}>{selectedLabel || 'Select a log'}</span>
+          {selectedCommit && (
+            <span
+              className={styles.selectedCommit}
+              title={`${selectedCommit.shortSha} · ${selectedCommit.subject}`}
+            >
+              {selectedCommit.shortSha}
+              <span className={styles.selectedCommitSubject}>{selectedCommit.subject}</span>
+            </span>
+          )}
           {!selectedIsArtifact && (
             <div className={styles.filterBar} aria-label="Event type filters">
               <span className={styles.filterLabel}>Show</span>
