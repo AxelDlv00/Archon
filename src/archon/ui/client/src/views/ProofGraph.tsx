@@ -24,6 +24,7 @@ import {
 import { STATUS_COLORS } from '../utils/constants';
 import AttemptCard from '../components/AttemptCard';
 import LeanCodeLine from '../components/LeanCodeLine';
+import BlueprintRendered from '../components/BlueprintRendered';
 import { highlightLeanLines } from '../utils/leanHighlight';
 import styles from './ProofGraph.module.css';
 
@@ -211,26 +212,38 @@ function SessionStats({ stats }: { stats: LogStats }) {
 
 function BlueprintSection({ file, name }: { file: string; name: string }) {
   const [open, setOpen] = useState(true);
+  const [showSource, setShowSource] = useState(false);
   const { data, isFetching } = useBlueprint(file, name);
   if (!data && !isFetching) return null;
   if (!data?.tex) {
-    // Still render a collapsed header so the user knows we looked for a
-    // blueprint entry but didn't find one — easier than silent emptiness.
     return (
       <div className={styles.codeSection}>
         <div className={styles.codeHeader} style={{ cursor: 'default', color: 'var(--text-muted)' }}>
-          Blueprint LaTeX <span style={{ fontSize: 10, fontWeight: 400 }}>— no \lean{`{${name}}`} found</span>
+          Blueprint <span style={{ fontSize: 10, fontWeight: 400 }}>— no \lean{`{${name}}`} found</span>
         </div>
       </div>
     );
   }
   return (
     <div className={styles.codeSection}>
-      <div className={styles.codeHeader} onClick={() => setOpen(!open)}>
-        {open ? '▾' : '▸'} Blueprint LaTeX
+      <div className={styles.codeHeader} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span onClick={() => setOpen(!open)} style={{ cursor: 'pointer', flex: 1 }}>
+          {open ? '▾' : '▸'} Blueprint
+        </span>
+        {open && (
+          <span
+            onClick={e => { e.stopPropagation(); setShowSource(s => !s); }}
+            title={showSource ? 'Show rendered blueprint' : 'Show raw LaTeX source'}
+            style={{ cursor: 'pointer', fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}
+          >
+            {showSource ? 'rendered' : 'source'}
+          </span>
+        )}
       </div>
       {open && (
-        <pre className={styles.texBlock}>{data.tex}</pre>
+        showSource
+          ? <pre className={styles.texBlock}>{data.tex}</pre>
+          : <BlueprintRendered tex={data.tex} />
       )}
     </div>
   );

@@ -11,6 +11,8 @@ import signal
 import socket
 import subprocess
 import time
+import urllib.error
+import urllib.request
 import webbrowser
 from importlib import resources
 from pathlib import Path
@@ -32,10 +34,43 @@ def _has(binary: str) -> bool:
 
 
 def _port_in_use(port: int) -> bool:
-    """Check if a TCP port is in LISTEN state."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.5)
-        return s.connect_ex(("127.0.0.1", port)) == 0
+    """Return True if ANY local stack (IPv4 or IPv6 loopback) is listening.
+
+    We must check both — a previous Node server that bound to `::` leaves the
+    port held on both stacks, and a browser resolving `localhost` to `::1`
+    can hit a zombie listener we'd otherwise miss if we only probed v4.
+    """
+    for family, addr in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as s:
+                s.settimeout(0.5)
+                if s.connect_ex((addr, port)) == 0:
+                    return True
+        except OSError:
+            # Family not supported on this host (e.g., IPv6 disabled) — skip.
+            continue
+    return False
+
+
+def _wait_for_http(port: int, timeout: float = 4.0) -> bool:
+    """Return True once the local archon UI actually answers HTTP on `port`.
+
+    `_port_in_use` only confirms *something* is listening; we need to confirm
+    *our* server is live. The /api/project endpoint is cheap and unique to
+    this dashboard, so a successful 200 response means our Node started,
+    bound the port, and is serving.
+    """
+    url = f"http://127.0.0.1:{port}/api/project"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=0.5) as resp:
+                if 200 <= resp.status < 500:
+                    return True
+        except (urllib.error.URLError, urllib.error.HTTPError, ConnectionError, OSError, TimeoutError):
+            pass
+        time.sleep(0.15)
+    return False
 
 
 def _find_free_port(start: int, attempts: int = 10) -> int | None:
@@ -270,8 +305,8 @@ def dashboard(
     if dev:
         log.header("Dev Mode")
         log.key_value({
-            "Dashboard": f"http://localhost:{port}",
-            "Vite dev": "http://localhost:5173 (auto-opens)",
+            "Dashboard": f"http://127.0.0.1:{port}",
+            "Vite dev": "http://127.0.0.1:5173 (auto-opens)",
         })
         log.info("Press Ctrl+C to stop\n")
 
@@ -295,18 +330,58 @@ def dashboard(
             _cleanup_dev()
         return
 
-    # Production mode — don't suppress stdout (matches bash)
-    server_proc = subprocess.Popen(server_cmd, cwd=server_dir)
+    # Production mode — launch with a retry loop so a TOCTOU race on the
+    # port (two dashboards starting simultaneously both see 8080 as "free",
+    # one wins the bind, the other dies with EADDRINUSE) bumps us forward
+    # instead of leaving a dead process claiming success.
+    def _spawn(p: int) -> subprocess.Popen:
+        cmd = [
+            "node", "--import", "tsx",
+            "src/index.ts", "--project", str(resolved), "--port", str(p),
+        ]
+        return subprocess.Popen(cmd, cwd=server_dir)
+
+    MAX_ATTEMPTS = 8
+    server_proc = _spawn(port)
     pid_file.write_text(str(server_proc.pid))
 
-    # Wait a moment to see if it crashes
-    time.sleep(1)
-    if server_proc.poll() is not None:
-        log.error("Server failed to start")
+    for attempt in range(MAX_ATTEMPTS):
+        if _wait_for_http(port, timeout=4.0):
+            break  # our server is live and answering
+        # Either it died on bind (race with another dashboard) or it
+        # didn't come up in time. Kill cleanly and advance to a fresh port.
+        died = server_proc.poll() is not None
+        if died:
+            log.warn(f"Port {port} was taken (likely by a parallel dashboard). Trying the next port…")
+        else:
+            log.warn(f"Server on port {port} did not respond within 4s. Restarting on the next port…")
+            server_proc.terminate()
+            try:
+                server_proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                server_proc.kill()
+
+        next_port = _find_free_port(port)
+        if next_port is None:
+            log.error(f"Could not find a free port in range {port + 1}–{port + 11}")
+            pid_file.unlink(missing_ok=True)
+            raise typer.Exit(1)
+        port = next_port
+        server_proc = _spawn(port)
+        pid_file.write_text(str(server_proc.pid))
+    else:
+        log.error(f"Server did not start after {MAX_ATTEMPTS} port attempts")
+        try:
+            server_proc.terminate()
+        except Exception:
+            pass
         pid_file.unlink(missing_ok=True)
         raise typer.Exit(1)
 
-    base_url = f"http://localhost:{port}"
+    # Use 127.0.0.1 over localhost: some systems resolve `localhost` to ::1
+    # first, which — if the server only listens on IPv4 — hangs the browser
+    # at "waiting for host…". 127.0.0.1 always picks the IPv4 stack.
+    base_url = f"http://127.0.0.1:{port}"
     log.header("Archon Dashboard")
     log.key_value({
         "Dashboard": base_url,

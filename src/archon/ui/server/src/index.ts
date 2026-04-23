@@ -70,13 +70,26 @@ export async function createServer(options: { projectPath: string; port: number 
   registerProofGraph(fastify, paths);
   registerGit(fastify, paths);
 
-  await fastify.listen({ port, host: '0.0.0.0' });
+  // Bind dual-stack (IPv6 `::` with IPV6_V6ONLY=0 accepts IPv4 too on Linux/macOS).
+  // Binding to `0.0.0.0` alone causes "waiting for host…" when the browser
+  // resolves localhost to ::1 first. Fall back to IPv4-only if IPv6 is disabled.
+  try {
+    await fastify.listen({ port, host: '::' });
+  } catch (e: any) {
+    if (e?.code === 'EAFNOSUPPORT' || e?.code === 'EADDRNOTAVAIL') {
+      await fastify.listen({ port, host: '0.0.0.0' });
+    } else {
+      throw e;
+    }
+  }
   return fastify;
 }
 
 // CLI entry point
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { projectPath, port } = parseArgs();
-  console.log(`Archon UI → http://localhost:${port}  (project: ${projectPath})`);
+  // Prefer 127.0.0.1 in the printed URL — resolves predictably on every system,
+  // whereas `localhost` may hit ::1 first on configurations with IPv6-first DNS.
+  console.log(`Archon UI → http://127.0.0.1:${port}  (project: ${projectPath})`);
   createServer({ projectPath, port }).catch(err => { console.error(err); process.exit(1); });
 }

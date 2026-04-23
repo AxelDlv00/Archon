@@ -105,7 +105,7 @@ While triggering a refactor should always be **strongly** motivated both mathema
 2. If the mathematical justification is non-trivial, use the informal agent or Web Search to develop it first.
 
 **When to trigger a refactor?**
-- If some Lean files become too large and could be decomposed into semantically meaningful modules. In that case, you should ensure that blueprint chapters are decomposed accordingly and trigger a refactor to split the corresponding Lean files.
+- If some Lean files become too large and could be decomposed into semantically meaningful modules. If some proofs are too long and could be decomposed into smaller parts (Lemmas, etc.). In that case, you should ensure that blueprint chapters are decomposed accordingly and trigger a refactor to split the corresponding Lean files.
 - If the proof strategy requires structural changes to the definitions, types, or module structure (e.g. modifying signatures, moving definitions, deleting or renaming a statement, etc.) that don't conflict with `archon-protected.yaml`. In that case, you should update the blueprint to reflect the desired structure and trigger a refactor to implement it.
 
 ## Post-Refactor Verification
