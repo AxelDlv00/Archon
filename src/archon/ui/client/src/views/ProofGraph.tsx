@@ -210,9 +210,20 @@ function SessionStats({ stats }: { stats: LogStats }) {
 // ── Blueprint LaTeX section ──────────────────────────────────────────
 
 function BlueprintSection({ file, name }: { file: string; name: string }) {
-  const [open, setOpen] = useState(false);
-  const { data } = useBlueprint(file, name);
-  if (!data?.tex) return null;
+  const [open, setOpen] = useState(true);
+  const { data, isFetching } = useBlueprint(file, name);
+  if (!data && !isFetching) return null;
+  if (!data?.tex) {
+    // Still render a collapsed header so the user knows we looked for a
+    // blueprint entry but didn't find one — easier than silent emptiness.
+    return (
+      <div className={styles.codeSection}>
+        <div className={styles.codeHeader} style={{ cursor: 'default', color: 'var(--text-muted)' }}>
+          Blueprint LaTeX <span style={{ fontSize: 10, fontWeight: 400 }}>— no \lean{`{${name}}`} found</span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={styles.codeSection}>
       <div className={styles.codeHeader} onClick={() => setOpen(!open)}>

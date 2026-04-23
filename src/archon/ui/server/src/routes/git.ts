@@ -122,6 +122,30 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
     return { commits };
   });
 
+  /**
+   * HEAD of the inner archon git repo (for "Overview" / "Journal" / "Diffs" badges).
+   * Returns { commit: null } when no inner git exists (legacy projects) — never 404s,
+   * so the UI can render unconditionally without branching on status codes.
+   */
+  fastify.get('/api/git/head', async () => {
+    if (!fs.existsSync(gitDir)) return { commit: null };
+    const raw = runGit(gitDir, projectPath, [
+      'log', '-1', '--format=%H%x01%h%x01%s%x01%ai%x01%D',
+    ]);
+    if (!raw.trim()) return { commit: null };
+    const [sha, shortSha, subject, date, refsRaw] = raw.trim().split('\x01');
+    const refs = refsRaw?.trim()
+      ? refsRaw.split(',').map(r => r.trim()).filter(Boolean)
+      : [];
+    const branch = refs
+      .map(r => r.replace(/^HEAD -> /, '').trim())
+      .find(r => !r.startsWith('tag:') && !r.startsWith('origin/') && r !== 'HEAD');
+    const { iteration, phase } = parseIter(subject ?? '');
+    return {
+      commit: { sha, shortSha, subject, date, branch: branch ?? 'main', iteration, phase },
+    };
+  });
+
   /** Phase logs for non-prover phases (plan, refactor, review, finalize) */
   fastify.get<{ Params: { iteration: string; phase: string } }>(
     '/api/git/phase-logs/:iteration/:phase',
@@ -133,32 +157,66 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
     }
   );
 
-  /** Blueprint LaTeX block for a declaration (from blueprint/src/chapters/{slug}.tex) */
+  /**
+   * Blueprint LaTeX block for a declaration.
+   *
+   * The declaration `name` reported by the Lean parser is just the last
+   * identifier (e.g. `my_thm`) and has no namespace prefix, but blueprints
+   * routinely reference the fully-qualified form (e.g. `\lean{Alpha.my_thm}`).
+   * We therefore match `\lean{...}` where `...` is either exactly `name` or
+   * ends with `.name`, and we look in the per-chapter .tex file first, then
+   * fall back to scanning every chapter .tex file if that misses.
+   */
   fastify.get<{ Querystring: { file?: string; name?: string } }>(
     '/api/blueprint',
     async (req, reply) => {
       const { file, name } = req.query;
       if (!file || !name) return reply.status(400).send({ error: 'Missing file or name' });
-      const slug = file.replace(/\.lean$/, '').replace(/\//g, '_');
-      const texFile = path.join(projectPath, 'blueprint', 'src', 'chapters', `${slug}.tex`);
-      if (!fs.existsSync(texFile)) return { tex: null };
-      const content = fs.readFileSync(texFile, 'utf-8');
-      // Find the LaTeX block containing \lean{name}
-      const idx = content.indexOf(`\\lean{${name}}`);
-      if (idx < 0) return { tex: null };
-      // Find the nearest enclosing environment before this position
-      const envRe = /\\begin\{(theorem|lemma|definition|remark|proposition|corollary)\}/g;
-      let bestStart = -1;
-      let m: RegExpExecArray | null;
-      while ((m = envRe.exec(content)) !== null) {
-        if (m.index <= idx) bestStart = m.index;
+
+      const escapeReg = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const leanTagRe = new RegExp(`\\\\lean\\{\\s*(?:[A-Za-z0-9_.']+\\.)?${escapeReg(name)}\\s*\\}`);
+
+      function extractBlock(texContent: string): string | null {
+        const match = leanTagRe.exec(texContent);
+        if (!match) return null;
+        const idx = match.index;
+        const envRe = /\\begin\{(theorem|lemma|definition|remark|proposition|corollary)\}/g;
+        let bestStart = -1;
+        let envName = 'theorem';
+        let m: RegExpExecArray | null;
+        while ((m = envRe.exec(texContent)) !== null) {
+          if (m.index <= idx) { bestStart = m.index; envName = m[1]; }
+        }
+        if (bestStart < 0) return null;
+        const endTag = `\\end{${envName}}`;
+        const endIdx = texContent.indexOf(endTag, bestStart);
+        if (endIdx < 0) return null;
+        return texContent.slice(bestStart, endIdx + endTag.length);
       }
-      if (bestStart < 0) return { tex: null };
-      const envName = content.slice(bestStart).match(/\\begin\{(\w+)\}/)?.[1] ?? 'theorem';
-      const endTag = `\\end{${envName}}`;
-      const endIdx = content.indexOf(endTag, bestStart);
-      if (endIdx < 0) return { tex: null };
-      return { tex: content.slice(bestStart, endIdx + endTag.length) };
+
+      const chaptersDir = path.join(projectPath, 'blueprint', 'src', 'chapters');
+
+      // 1. Try the per-file chapter first (e.g. Algebra/Foo.lean → Algebra_Foo.tex).
+      const slug = file.replace(/\.lean$/, '').replace(/\//g, '_');
+      const primary = path.join(chaptersDir, `${slug}.tex`);
+      if (fs.existsSync(primary)) {
+        const block = extractBlock(fs.readFileSync(primary, 'utf-8'));
+        if (block) return { tex: block };
+      }
+
+      // 2. Fall back to any other chapter file — the same declaration may have
+      //    been documented in a different module's chapter.
+      if (fs.existsSync(chaptersDir)) {
+        for (const entry of fs.readdirSync(chaptersDir)) {
+          if (!entry.endsWith('.tex') || entry === `${slug}.tex`) continue;
+          const full = path.join(chaptersDir, entry);
+          if (!fs.statSync(full).isFile()) continue;
+          const block = extractBlock(fs.readFileSync(full, 'utf-8'));
+          if (block) return { tex: block };
+        }
+      }
+
+      return { tex: null };
     }
   );
 }

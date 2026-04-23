@@ -40,6 +40,7 @@ export interface LogGroup {
     prover?: { status: string; durationSecs?: number };
     review?: { status: string; durationSecs?: number };
     provers?: Record<string, { file: string; status: string }>;
+    commit?: { sha: string; shortSha: string; subject: string; date: string };
   };
 }
 
@@ -179,6 +180,7 @@ export interface TimelineEntry {
   ts?: string;            // timestamp from code_snapshot event
   proverLog?: string;     // slug for log cross-reference
   sourceFile?: string;    // actual edited file recorded by code_snapshot event
+  synthetic?: boolean;    // content came from git / empty placeholder, not a real prover snapshot
   diff?: string;
   addedLines?: number;
   removedLines?: number;

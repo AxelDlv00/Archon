@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import type { FastifyInstance } from 'fastify';
 import { parseJsonl, readFileOr } from '../utils.js';
+import { mapIterToCommit } from '../utils/innerGit.js';
 import type { ProjectPaths } from './project.js';
 
 interface LogFileEntry { name: string; path: string; size: number; modified: string; role?: string }
@@ -18,11 +19,14 @@ function resolveLogPath(logsPath: string, logPath: string): string | null {
 }
 
 export function register(fastify: FastifyInstance, paths: ProjectPaths) {
-  const { logsPath } = paths;
+  const { logsPath, archonPath, projectPath } = paths;
+  const gitDir = path.join(archonPath, 'git-dir');
 
   // Tree-structured log listing
   fastify.get('/api/logs', async () => {
     if (!fs.existsSync(logsPath)) return { flat: [], groups: [] };
+
+    const commitByIter = mapIterToCommit(gitDir, projectPath);
 
     const flat: LogFileEntry[] = fs.readdirSync(logsPath)
       .filter(f => f.endsWith('.jsonl') && fs.statSync(path.join(logsPath, f)).isFile())
@@ -78,7 +82,95 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
       const metaFile = path.join(dirPath, 'meta.json');
       try { meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8')); } catch { /* skip */ }
 
+      // Attach the inner git commit for this iteration (if present).
+      const commit = commitByIter.get(dir);
+      if (commit) meta = { ...(meta ?? {}), commit };
+
       groups.push({ id: dir, files, meta });
+    }
+
+    // ── Relocate legacy flat refactor-{timestamp}.jsonl files into their true iter.
+    // Strategy: a manual refactor commit is tagged `archon[N+1/refactor/...]` in the
+    // inner git — i.e. it belongs to the NEXT iteration. Use commitByIter's subject
+    // dates to find the refactor commit whose date is closest to the filename
+    // timestamp, and attach the flat file to that iter. Falls back to mtime-window
+    // correlation when no inner git exists.
+    if (groups.length && flat.length) {
+      const refactorCommits = Array.from(commitByIter.entries())
+        .filter(([, c]) => /archon\[\d+\/refactor/.test(c.subject))
+        .map(([iterId, c]) => ({ iterId, ts: new Date(c.date).getTime() }))
+        .filter(x => Number.isFinite(x.ts));
+
+      const iterWindows = groups.map(g => {
+        const m = g.meta as Record<string, unknown> | undefined;
+        const sAt = typeof m?.startedAt === 'string' ? new Date(m.startedAt).getTime() : 0;
+        const cAt = typeof m?.completedAt === 'string' ? new Date(m.completedAt).getTime() : 0;
+        return { id: g.id, startedAt: sAt, completedAt: cAt };
+      });
+
+      for (let i = flat.length - 1; i >= 0; i--) {
+        const f = flat[i];
+        const m = f.name.match(/^refactor-(\d+)\.jsonl$/);
+        if (!m) continue;
+        const ts = parseInt(m[1], 10) * 1000;
+        if (!Number.isFinite(ts) || ts <= 0) continue;
+
+        let targetIterId: string | undefined;
+
+        // 1. Prefer matching to a real refactor commit by date proximity (≤1h window).
+        if (refactorCommits.length) {
+          let bestDelta = Infinity;
+          for (const rc of refactorCommits) {
+            const d = Math.abs(ts - rc.ts);
+            if (d < bestDelta && d <= 3600 * 1000) {
+              bestDelta = d;
+              targetIterId = rc.iterId;
+            }
+          }
+        }
+
+        // 2. Otherwise, fall back to the closest iter by time windows (legacy projects
+        //    without inner git, or refactors that never committed).
+        if (!targetIterId) {
+          let bestIdx = -1;
+          let bestDelta = Infinity;
+          for (let gi = 0; gi < iterWindows.length; gi++) {
+            const w = iterWindows[gi];
+            const upper = w.completedAt || iterWindows[gi + 1]?.startedAt || (w.startedAt + 24 * 3600 * 1000);
+            const lower = w.startedAt;
+            if (!lower) continue;
+            if (ts >= lower - 3600 * 1000 && ts <= upper + 3600 * 1000) {
+              const centre = (lower + upper) / 2;
+              const d = Math.abs(ts - centre);
+              if (d < bestDelta) { bestDelta = d; bestIdx = gi; }
+            }
+          }
+          if (bestIdx < 0) {
+            // Final fallback: closest iter by startedAt.
+            for (let gi = 0; gi < iterWindows.length; gi++) {
+              const w = iterWindows[gi];
+              if (!w.startedAt) continue;
+              const d = Math.abs(ts - w.startedAt);
+              if (d < bestDelta) { bestDelta = d; bestIdx = gi; }
+            }
+          }
+          if (bestIdx >= 0) targetIterId = iterWindows[bestIdx].id;
+        }
+
+        if (targetIterId) {
+          const target = groups.find(g => g.id === targetIterId);
+          if (target) {
+            target.files.push({
+              name: f.name,
+              path: f.path,
+              size: f.size,
+              modified: f.modified,
+              role: 'refactor-manual',
+            });
+            flat.splice(i, 1);
+          }
+        }
+      }
     }
 
     return { flat, groups };

@@ -1,4 +1,5 @@
 import { useProgress, useSummary, useSorryCount, useTasks } from '../hooks/useApi';
+import { useGitHead } from '../hooks/useGitLog';
 import { fmtDuration, fmtTime } from '../utils/format';
 import { STATUS_COLORS } from '../utils/constants';
 import styles from './Overview.module.css';
@@ -18,12 +19,21 @@ export default function Overview() {
   const { data: summary } = useSummary();
   const { data: sorryData } = useSorryCount();
   const { data: tasks } = useTasks();
+  const { data: headData } = useGitHead();
 
   const stage = progress?.stage || 'init';
   const stageIdx = STAGES.indexOf(stage);
+  const head = headData?.commit;
 
   return (
     <div className={styles.root}>
+      {head && (
+        <div className={styles.commitBanner} title={head.subject}>
+          <span className={styles.commitSha}>{head.shortSha}</span>
+          <span className={styles.commitBranch}>{head.branch}</span>
+          <span className={styles.commitSubject}>{head.subject}</span>
+        </div>
+      )}
       <div className={styles.stages}>
         {STAGES.map((s, i) => (
           <span key={s} className={i === stageIdx ? styles.current : i < stageIdx ? styles.done : styles.future}>

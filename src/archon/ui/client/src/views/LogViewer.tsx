@@ -94,10 +94,24 @@ function IterGroup({ group, selectedFile, onSelect, isLatest, nowMs }: {
         {canShowRunning && activePhase && <span className={styles.groupStage}>{activePhase}</span>}
         {canShowRunning && isAnyRunning && <span className={styles.groupLive}>●</span>}
         {runningElapsed && <span className={styles.groupElapsed}>{runningElapsed}</span>}
+        {meta?.commit && (
+          <span
+            className={styles.commitBadge}
+            title={meta.commit.subject}
+          >
+            {meta.commit.shortSha}
+          </span>
+        )}
       </div>
 
       {expanded && (
         <div className={styles.groupBody}>
+          {meta?.commit && (
+            <div className={styles.commitRow} title={meta.commit.subject}>
+              <span className={styles.commitSha}>{meta.commit.shortSha}</span>
+              <span className={styles.commitSubject}>{meta.commit.subject}</span>
+            </div>
+          )}
           {meta && (
             <div className={styles.metaBar}>
               <PhaseTag label="plan" status={canShowRunning ? meta.plan?.status : (meta.plan?.status === 'done' ? 'done' : undefined)} secs={meta.plan?.durationSecs} />
@@ -156,6 +170,7 @@ const ROLE_COLORS: Record<string, string> = {
   plan: 'var(--blue)',
   'plan-post-refactor': 'var(--blue)',
   refactor: '#e36209',
+  'refactor-manual': '#e36209',
   'refactor-directive': '#e36209',
   'refactor-report': '#e36209',
   prover: 'var(--purple)',

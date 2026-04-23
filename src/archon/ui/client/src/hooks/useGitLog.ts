@@ -39,6 +39,27 @@ export function useGitLog() {
   });
 }
 
+export interface GitHeadResponse {
+  commit: null | {
+    sha: string;
+    shortSha: string;
+    subject: string;
+    date: string;
+    branch: string;
+    iteration?: string;
+    phase?: string;
+  };
+}
+
+/** HEAD commit of the inner archon git (null when no inner git exists). */
+export function useGitHead() {
+  return useQuery<GitHeadResponse>({
+    queryKey: ['gitHead'],
+    queryFn: () => fetchJson('/api/git/head'),
+    refetchInterval: 10000,
+  });
+}
+
 export function usePhaseLogs(iteration: string | undefined, phase: string | undefined) {
   return useQuery<PhaseLogResponse>({
     queryKey: ['phaseLogs', iteration, phase],

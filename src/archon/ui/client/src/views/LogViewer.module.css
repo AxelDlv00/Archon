@@ -32,6 +32,28 @@
 
 .groupBody { padding-left: 8px; }
 
+/* Commit badges */
+.commitBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.commitRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 4px 22px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.commitSha { font-family: var(--font-mono); font-weight: 600; color: var(--text-secondary); flex-shrink: 0; }
+.commitSubject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Phase summary */
 .metaBar {
   display: flex; flex-wrap: wrap; gap: 6px;
