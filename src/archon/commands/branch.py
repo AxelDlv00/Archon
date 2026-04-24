@@ -131,13 +131,24 @@ def checkout(
     project_path: str = typer.Argument(".", help="Path to Lean project."),
     force: bool = typer.Option(
         False, "--force",
-        help="Bypass the outer-dirty check. Dangerous — may overwrite "
-             "your uncommitted mathematician work.",
+        help="Bypass the outer-dirty check AND overwrite any inner-tracked "
+             "changes. Dangerous — may overwrite uncommitted work.",
+    ),
+    keep_untracked: bool = typer.Option(
+        False, "--keep-untracked",
+        help="Do not remove untracked files (e.g. iteration logs, task "
+             "results) created after the target commit. By default they "
+             "are removed so the working tree fully matches the target.",
     ),
 ) -> None:
     """Switch the inner git to a different branch or commit.
 
-    This rewrites `.lean` / blueprint files on disk to match the target.
+    This rewrites `.lean` / blueprint files on disk to match the target,
+    AND removes iteration logs / task results that were created after the
+    target commit — so the dashboard, graph, and files all reflect the
+    state of the commit you asked for. Pass [cyan]--keep-untracked[/cyan]
+    to preserve later artifacts.
+
     If your outer (mathematician's) git repo has uncommitted changes, the
     operation is refused by default — commit or stash first, or pass
     [cyan]--force[/cyan] to overwrite them.
@@ -147,6 +158,7 @@ def checkout(
       [cyan]archon checkout bolzano-weierstrass .[/cyan]
       [cyan]archon checkout abc1234 .[/cyan]
       [cyan]archon checkout abc1234 . --force[/cyan]   (discard uncommitted outer changes)
+      [cyan]archon checkout abc1234 . --keep-untracked[/cyan]   (preserve later iter-* logs)
     """
     resolved, inner = _resolve_project(project_path)
     warn_if_mismatch(resolved)
@@ -160,22 +172,24 @@ def checkout(
     # Warn (but do not block) if the inner repo is dirty — the user may
     # be mid-iteration and have unfinished agent work. Dropping it would
     # be destructive, so we surface it and let the user decide.
-    if inner.is_dirty():
+    if inner.is_dirty() and not force:
         log.warn(
             "Inner git has uncommitted agent work. Switching branches now "
             "will carry those changes over (if they don't conflict) or "
             "refuse with a conflict error."
         )
         log.step("To commit current agent state first:")
-        log.step(f"  git --git-dir={resolved}/.archon/.git --work-tree={resolved} commit -am 'archon: checkpoint'")
+        log.step(f"  git --git-dir={resolved}/.archon/git-dir --work-tree={resolved} commit -am 'archon: checkpoint'")
         log.step("To discard current agent state instead:")
         log.step(f"  archon clean {project_path}")
+        log.step(f"Or re-run with --force to overwrite inner changes: "
+                 f"archon checkout {ref} {project_path} --force")
         log.step("")
         if not typer.confirm("Continue with checkout anyway?", default=False):
             raise typer.Exit(0)
 
     try:
-        inner.checkout(ref)
+        inner.checkout(ref, force=force)
     except Exception as e:
         log.error(f"Failed to checkout {ref}: {e}")
         raise typer.Exit(1)
@@ -184,6 +198,32 @@ def checkout(
     sha = inner.head_sha(short=True)
     if sha:
         log.step(f"Inner HEAD: {sha}  ({inner.last_commit_subject() or '?'})")
+
+    # Remove files that don't belong to the target commit — stale
+    # iteration logs, task_results, and anything else created on later
+    # commits. Without this the dashboard keeps showing "future" runs.
+    if keep_untracked:
+        leftover = inner.clean_untracked(dry_run=True)
+        if leftover:
+            log.info(
+                f"Kept {len(leftover)} untracked path(s) from later commits "
+                f"(--keep-untracked). The dashboard may still show them:"
+            )
+            _log_path_preview(leftover)
+        return
+
+    removed = inner.clean_untracked(dry_run=False)
+    if not removed:
+        return
+    log.info(f"Removed {len(removed)} untracked path(s) not present at {ref}:")
+    _log_path_preview(removed)
+
+
+def _log_path_preview(paths: list[str], limit: int = 10) -> None:
+    for p in paths[:limit]:
+        log.step(f"  {p}")
+    if len(paths) > limit:
+        log.step(f"  ... ({len(paths) - limit} more)")
 
 
 # ── log (small helper, handy for archon users) ────────────────────────

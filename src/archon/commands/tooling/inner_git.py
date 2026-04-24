@@ -292,14 +292,53 @@ class InnerGit:
             )
         self._run(["branch", safe, from_ref])
 
-    def checkout(self, name: str) -> None:
-        """Switch to an existing branch. Rewrites working tree."""
+    def checkout(self, name: str, *, force: bool = False) -> None:
+        """Switch to an existing branch or commit. Rewrites working tree.
+
+        When ``force=True``, passes ``-f`` to ``git checkout`` so local
+        modifications to tracked files are overwritten. Untracked files
+        from later commits are NOT removed by checkout itself — call
+        :py:meth:`clean_untracked` after to make the tree fully match the
+        target.
+        """
         if not self.is_initialized():
             raise InnerGitError(
                 ["checkout", name], "", "inner repo not initialized", 1,
             )
         safe = _safe_branch_name(name)
-        self._run(["checkout", safe])
+        args = ["checkout"]
+        if force:
+            args.append("-f")
+        args.append(safe)
+        self._run(args)
+
+    def clean_untracked(self, *, dry_run: bool = False) -> list[str]:
+        """Remove untracked files and directories in the inner work tree.
+
+        Respects the inner repo's ``info/exclude`` (so ``.lake/``,
+        ``.archon/git-dir/``, ``.git/`` etc. are preserved). Used after
+        ``checkout`` to drop files that were created on later commits and
+        don't exist at the target ref.
+
+        With ``dry_run=True``, returns the list of paths that *would* be
+        removed without touching them.
+        """
+        if not self.is_initialized():
+            return []
+        flags = "-nd" if dry_run else "-fd"
+        r = self._run(["clean", flags], check=False)
+        if r.returncode != 0:
+            return []
+        paths: list[str] = []
+        for line in r.stdout.splitlines():
+            # git clean lines look like "Would remove path/" (dry-run) or
+            # "Removing path/" (real run).
+            stripped = line.strip()
+            if stripped.startswith("Would remove "):
+                paths.append(stripped[len("Would remove "):].rstrip("/"))
+            elif stripped.startswith("Removing "):
+                paths.append(stripped[len("Removing "):].rstrip("/"))
+        return paths
 
     def has_branch(self, name: str) -> bool:
         return _safe_branch_name(name) in self.list_branches()
