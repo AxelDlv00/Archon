@@ -691,9 +691,9 @@ def _step_inner_git(project_path: Path) -> None:
     inner = InnerGit(project_path)
     created = inner.init()
     if created:
-        log.step("Initialized inner git at .archon/.git")
+        log.step("Initialized inner git at .archon/git-dir")
     else:
-        log.step("Inner git already present at .archon/.git")
+        log.step("Inner git already present at .archon/git-dir")
 
     # First commit captures the state at init time so subsequent phase
     # commits have a baseline to diff against.

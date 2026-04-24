@@ -223,8 +223,9 @@ def run(
 
     if ok:
         log.step("Inspect the diff: "
-                 "git --git-dir=.archon/.git --work-tree=. show HEAD")
-        log.step(f"If the refactor went badly: archon checkout <sha-or-branch>")
+                 "git --git-dir=.archon/git-dir --work-tree=. show HEAD")
+        log.step("If the refactor went badly, fork a new branch at the "
+                 "previous commit: archon branch pre-refactor . --from HEAD~1")
 
 
 # ── helpers ───────────────────────────────────────────────────────────

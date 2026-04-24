@@ -30,6 +30,24 @@ export default function Journal() {
   const { data: gitData } = useGitLog();
   const head = headData?.commit;
 
+  // Commits reachable from the current HEAD — sessions from other branches
+  // must not pollute the Journal banner. Without this filter the view can
+  // pick up e.g. an iter-2 commit from `main` while you're forked at iter-1.
+  const reachableFromHead = useMemo(() => {
+    const reachable = new Set<string>();
+    if (!head || !gitData?.commits) return reachable;
+    const bySha = new Map(gitData.commits.map(c => [c.sha, c]));
+    const stack = [head.sha];
+    while (stack.length) {
+      const sha = stack.pop()!;
+      if (reachable.has(sha)) continue;
+      reachable.add(sha);
+      const c = bySha.get(sha);
+      if (c) for (const p of c.parents) stack.push(p);
+    }
+    return reachable;
+  }, [head, gitData]);
+
   // Map the selected session_NNN to its iter-NNN review commit. Sessions are
   // produced by the review agent once per iteration, so the numeric suffix
   // lines up with the iter index.
@@ -38,9 +56,11 @@ export default function Journal() {
     const match = currentSession.match(/session_(\d+)/);
     if (!match) return undefined;
     const iterId = `iter-${String(parseInt(match[1], 10)).padStart(3, '0')}`;
-    return gitData.commits.find(c => c.iteration === iterId && c.phase === 'review')
-      ?? gitData.commits.find(c => c.iteration === iterId);
-  }, [currentSession, gitData]);
+    const reachable = (c: typeof gitData.commits[number]) =>
+      reachableFromHead.size === 0 || reachableFromHead.has(c.sha);
+    return gitData.commits.find(c => reachable(c) && c.iteration === iterId && c.phase === 'review')
+      ?? gitData.commits.find(c => reachable(c) && c.iteration === iterId);
+  }, [currentSession, gitData, reachableFromHead]);
 
   const allAggregated = useMemo(() => {
     if (!allMilestoneData?.length) return [];

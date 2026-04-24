@@ -77,7 +77,7 @@ def main(
 # ── register commands ─────────────────────────────────────────────────
 
 from archon.commands.init import init  # noqa: E402
-from archon.commands.loop import loop, clean  # noqa: E402
+from archon.commands.loop import loop  # noqa: E402
 from archon.commands.doctor import doctor  # noqa: E402
 from archon.commands.dashboard import dashboard  # noqa: E402
 from archon.commands.setup import setup  # noqa: E402
@@ -86,7 +86,7 @@ from archon.commands.hint import hint  # noqa: E402
 from archon.commands.update import update  # noqa: E402
 from archon.commands.discuss import discuss  # noqa: E402
 from archon.commands.refactor import app as refactor_app  # noqa: E402
-from archon.commands.branch import branch, checkout, inner_log  # noqa: E402
+from archon.commands.branch import branch, inner_log  # noqa: E402
 from archon.commands.version import version as version_cmd  # noqa: E402
 
 app.command()(init)
@@ -98,9 +98,7 @@ app.command()(setup)
 app.command()(hint)
 app.command()(update)
 app.command()(discuss)
-app.command("clean")(clean)
 app.command("branch")(branch)
-app.command("checkout")(checkout)
 app.command("log")(inner_log)
 app.command("version")(version_cmd)
 app.add_typer(refactor_app, name="refactor")

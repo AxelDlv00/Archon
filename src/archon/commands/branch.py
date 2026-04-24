@@ -1,29 +1,27 @@
-"""`archon branch` and `archon checkout` — inner-git strategy branches.
+"""`archon branch` — time-travel and forking on the inner git.
 
-The mathematician uses these to fork the formalization at any point and
-carry on with a different strategy. Branches live in the inner git at
-`.archon/.git/`. The outer (mathematician's) git repo is never modified.
+The mathematician uses `archon branch` both to switch between existing
+timelines and to fork a new one at any past commit. Branches live in the
+inner git at `.archon/git-dir/`; the outer (mathematician's) git repo is
+never modified.
 
-Both commands are interactive when necessary: checkout refuses with a
-clear error if the outer working tree is dirty (to protect uncommitted
-mathematician work), and asks the user how to handle dirty inner state.
+Two shapes, one verb:
+
+    archon branch <name>                 # switch to existing <name>
+    archon branch <name> --from <commit> # fork new <name> at <commit>, switch
 """
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
+from typing import Optional
 
 import typer
 
 from archon import log
 from archon.commands.tooling.git import Git
 from archon.commands.tooling.inner_git import InnerGit, _safe_branch_name
-
-# Subpaths where ignored files must also be cleaned on checkout. .raw.jsonl
-# lives under .archon/logs/ and is excluded, so a plain `git clean -fd`
-# leaves hollow iter-NNN/ directories behind, which the dashboard then
-# keeps listing as if the iteration still exists.
-_CLEAN_INCLUDE_IGNORED = [".archon/logs"]
 from archon.commands.tooling.version import warn_if_mismatch
 
 
@@ -39,16 +37,18 @@ def _resolve_project(project_path: str) -> tuple[Path, InnerGit]:
     if not inner.is_initialized():
         log.error("Inner git not initialized. Run: archon init <path>")
         raise typer.Exit(1)
+    # Migrate older projects whose info/exclude still drops .raw.jsonl.
+    inner.ensure_excludes()
     return resolved, inner
 
 
 def _refuse_if_outer_dirty(project_path: Path, force_hint: str | None = None) -> None:
     """Refuse with a clear error if the outer (mathematician's) tree is dirty.
 
-    `archon checkout` replaces files on disk — if the mathematician has
-    uncommitted work, that work is at risk. Block the operation until
-    they commit or stash. If the caller supports a bypass, pass
-    ``force_hint`` to surface it in the error message.
+    Switching branches rewrites files on disk — if the mathematician has
+    uncommitted work, that work is at risk. Block until they commit or
+    stash. If the caller supports a bypass, pass ``force_hint`` to
+    surface it in the error message.
     """
     outer = Git(project_path, auto_init=False)
     if not outer.is_repo():
@@ -56,7 +56,7 @@ def _refuse_if_outer_dirty(project_path: Path, force_hint: str | None = None) ->
     if outer.is_dirty():
         log.error(
             "The outer git repo is dirty — there are uncommitted changes "
-            "in your working tree. archon checkout rewrites files on disk."
+            "in your working tree. Switching branches rewrites files on disk."
         )
         log.step("Commit or stash your work first:")
         log.step("  git add -A && git commit -m '<message>'")
@@ -73,224 +73,171 @@ def _refuse_if_outer_dirty(project_path: Path, force_hint: str | None = None) ->
 
 
 def branch(
-    strategy: str = typer.Argument(
+    name: str = typer.Argument(
         ...,
-        help="Name of the strategy — used as the inner-git branch name.",
+        help="Branch name — existing branch to switch to, or new branch to create.",
     ),
     project_path: str = typer.Argument(".", help="Path to Lean project."),
-    from_ref: str = typer.Option(
-        "HEAD", "--from", "-f",
-        help="Inner-git ref to branch off (default: current HEAD).",
+    from_ref: Optional[str] = typer.Option(
+        None, "--from", "-f",
+        help="Create a new branch at this commit/ref. Omit to switch to an "
+             "existing branch named <name>.",
     ),
-    checkout: bool = typer.Option(
-        True, "--checkout/--no-checkout",
-        help="Immediately switch to the new branch.",
-    ),
-) -> None:
-    """Create a new inner-git branch named after the strategy.
-
-    [bold]Example:[/bold]
-      [cyan]archon branch bolzano-weierstrass .[/cyan]
-
-    Creates an inner-git branch "bolzano-weierstrass" at the current HEAD
-    and switches to it. The mathematician can now run `archon loop` and
-    the new iterations will land on this branch.
-    """
-    resolved, inner = _resolve_project(project_path)
-    warn_if_mismatch(resolved)
-
-    safe = _safe_branch_name(strategy)
-    if safe != strategy:
-        log.info(f"Branch name normalized: {strategy!r} → {safe!r}")
-
-    if inner.has_branch(safe):
-        log.error(f"Branch already exists: {safe}")
-        log.step(f"Switch to it: archon checkout {safe} {project_path}")
-        raise typer.Exit(1)
-
-    try:
-        inner.create_branch(safe, from_ref=from_ref)
-    except Exception as e:
-        log.error(f"Failed to create branch: {e}")
-        raise typer.Exit(1)
-
-    log.success(f"Created inner-git branch: {safe}")
-
-    if checkout:
-        _refuse_if_outer_dirty(resolved)
-        try:
-            inner.checkout(safe)
-        except Exception as e:
-            log.error(f"Failed to switch to {safe}: {e}")
-            raise typer.Exit(1)
-        log.success(f"Switched to: {safe}")
-
-
-# ── checkout ──────────────────────────────────────────────────────────
-
-
-def checkout(
-    ref: str = typer.Argument(
-        ...,
-        help="Branch name or commit SHA to switch to (in the inner git).",
-    ),
-    project_path: str = typer.Argument(".", help="Path to Lean project."),
     force: bool = typer.Option(
         False, "--force",
-        help="Bypass the outer-dirty check AND overwrite any inner-tracked "
+        help="Bypass the outer-dirty check and overwrite any inner-tracked "
              "changes. Dangerous — may overwrite uncommitted work.",
     ),
-    keep_untracked: bool = typer.Option(
-        False, "--keep-untracked",
-        help="Do not remove untracked files (e.g. iteration logs, task "
-             "results) created after the target commit. By default they "
-             "are removed so the working tree fully matches the target.",
-    ),
 ) -> None:
-    """Switch the inner git to a different branch or commit.
+    """Switch to an existing inner-git branch, or fork a new one.
 
-    This rewrites `.lean` / blueprint files on disk to match the target,
-    AND removes iteration logs / task results that were created after the
-    target commit — so the dashboard, graph, and files all reflect the
-    state of the commit you asked for. Pass [cyan]--keep-untracked[/cyan]
-    to preserve later artifacts.
+    [bold]Switch to an existing branch:[/bold]
+      [cyan]archon branch main .[/cyan]
+      [cyan]archon branch bolzano-weierstrass .[/cyan]
 
-    If your outer (mathematician's) git repo has uncommitted changes, the
-    operation is refused by default — commit or stash first, or pass
-    [cyan]--force[/cyan] to overwrite them.
+    [bold]Fork a new branch at a past commit (time-travel):[/bold]
+      [cyan]archon branch alt-strategy . --from b69ab81[/cyan]
+      [cyan]archon branch alt-strategy . --from main[/cyan]
 
-    [bold]Examples:[/bold]
-      [cyan]archon checkout main .[/cyan]
-      [cyan]archon checkout bolzano-weierstrass .[/cyan]
-      [cyan]archon checkout abc1234 .[/cyan]
-      [cyan]archon checkout abc1234 . --force[/cyan]   (discard uncommitted outer changes)
-      [cyan]archon checkout abc1234 . --keep-untracked[/cyan]   (preserve later iter-* logs)
+    Forking leaves every other branch untouched — your original timeline
+    is still reachable via [cyan]archon branch <its-name> .[/cyan]
     """
     resolved, inner = _resolve_project(project_path)
     warn_if_mismatch(resolved)
 
-    if not force:
-        _refuse_if_outer_dirty(
-            resolved,
-            force_hint=f"archon checkout {ref} {project_path} --force",
-        )
+    safe = _safe_branch_name(name)
+    if safe != name:
+        log.info(f"Branch name normalized: {name!r} → {safe!r}")
 
-    # Warn (but do not block) if the inner repo is dirty — the user may
-    # be mid-iteration and have unfinished agent work. Dropping it would
-    # be destructive, so we surface it and let the user decide.
-    if inner.is_dirty() and not force:
-        log.warn(
-            "Inner git has uncommitted agent work. Switching branches now "
-            "will carry those changes over (if they don't conflict) or "
-            "refuse with a conflict error."
-        )
-        log.step("To commit current agent state first:")
-        log.step(f"  git --git-dir={resolved}/.archon/git-dir --work-tree={resolved} commit -am 'archon: checkpoint'")
-        log.step("To discard current agent state instead:")
-        log.step(f"  archon clean {project_path}")
-        log.step(f"Or re-run with --force to overwrite inner changes: "
-                 f"archon checkout {ref} {project_path} --force")
-        log.step("")
-        if not typer.confirm("Continue with checkout anyway?", default=False):
-            raise typer.Exit(0)
+    existed = inner.has_branch(safe)
 
-    try:
-        inner.checkout(ref, force=force)
-    except Exception as e:
-        log.error(f"Failed to checkout {ref}: {e}")
+    if from_ref is not None and existed:
+        log.error(f"Branch already exists: {safe}")
+        log.step(f"To switch to it, drop --from: archon branch {safe} {project_path}")
         raise typer.Exit(1)
 
-    log.success(f"Switched to: {ref}")
+    if from_ref is None and not existed:
+        log.error(f"No branch named {safe!r}.")
+        log.step("To create it at the current commit:")
+        log.step(f"  archon branch {safe} {project_path} --from HEAD")
+        log.step("To create it at a past commit:")
+        log.step(f"  archon branch {safe} {project_path} --from <commit>")
+        raise typer.Exit(1)
+
+    force_hint = (
+        f"archon branch {name} {project_path}"
+        + (f" --from {from_ref}" if from_ref else "")
+        + " --force"
+    )
+
+    if not force:
+        _refuse_if_outer_dirty(resolved, force_hint=force_hint)
+
+    if inner.is_dirty() and not force:
+        log.warn(
+            "Inner git has uncommitted agent work (e.g. a mid-iteration "
+            "Ctrl-C). Switching may refuse with a conflict or carry those "
+            "changes across."
+        )
+        log.step(f"To plow through, re-run with --force: {force_hint}")
+        if not typer.confirm("Continue anyway?", default=False):
+            raise typer.Exit(0)
+
+    if not existed:
+        try:
+            inner.create_branch(safe, from_ref=from_ref or "HEAD")
+        except Exception as e:
+            log.error(f"Failed to create branch {safe}: {e}")
+            raise typer.Exit(1)
+        log.success(f"Created branch {safe} at {from_ref}")
+
+    try:
+        inner.checkout(safe, force=force)
+    except Exception as e:
+        log.error(f"Failed to switch to {safe}: {e}")
+        raise typer.Exit(1)
+
+    log.success(f"Switched to: {safe}")
     sha = inner.head_sha(short=True)
     if sha:
         log.step(f"Inner HEAD: {sha}  ({inner.last_commit_subject() or '?'})")
 
-    # Remove files that don't belong to the target commit — stale
-    # iteration logs, task_results, and anything else created on later
-    # commits. We also scrub ignored files under .archon/logs/ so that
-    # iter-NNN/ directories left hollow (containing only excluded
-    # .raw.jsonl) are truly removed — otherwise the dashboard keeps
-    # listing them.
-    if keep_untracked:
-        leftover = inner.clean_untracked(
-            dry_run=True,
-            also_ignored_in=_CLEAN_INCLUDE_IGNORED,
-        )
-        if leftover:
-            log.info(
-                f"Kept {len(leftover)} untracked path(s) from later commits "
-                f"(--keep-untracked). The dashboard may still show them:"
-            )
-            _log_path_preview(leftover)
-    else:
-        removed = inner.clean_untracked(
-            dry_run=False,
-            also_ignored_in=_CLEAN_INCLUDE_IGNORED,
-        )
-        if removed:
-            log.info(f"Removed {len(removed)} untracked path(s) not present at {ref}:")
-            _log_path_preview(removed)
-
-    # Detached-HEAD handling: if the user checked out a bare SHA, any
-    # future inner commits (e.g. from `archon loop`) land on an unnamed
-    # ref that branches can't see. Offer to create a branch so the new
-    # timeline is preserved and the dashboard's graph shows it.
-    if inner.is_detached():
-        _handle_detached_head(inner, ref, project_path)
+    # Remove state directories on disk that aren't part of the target
+    # commit's tree. `git checkout` only removes tracked FILES, not
+    # directories, so hollow dirs survive — iter-NNN/ under .archon/logs/
+    # linger and bump next_iter_num; session_N/ under proof-journal/
+    # lingers and pollutes the Journal view with cross-branch sessions.
+    # Strictly scoped to known state-dir patterns so nothing else can be
+    # affected.
+    _drop_stale_state_dirs(resolved, inner)
 
 
-def _log_path_preview(paths: list[str], limit: int = 10) -> None:
-    for p in paths[:limit]:
-        log.step(f"  {p}")
-    if len(paths) > limit:
-        log.step(f"  ... ({len(paths) - limit} more)")
+# (parent dir under .archon, prefix that identifies state subdirs)
+_STALE_STATE_DIRS = [
+    ("logs", "iter-"),
+    ("proof-journal/sessions", "session_"),
+]
 
 
-def _handle_detached_head(inner: InnerGit, ref: str, project_path: str) -> None:
-    """Warn about detached HEAD after checkout and offer to create a branch.
+def _drop_stale_state_dirs(project_path: Path, inner: InnerGit) -> None:
+    """Remove iter-*/session_* dirs on disk that aren't in HEAD's tree.
 
-    Existing branches are unchanged — the commit the user checked out FROM
-    is still reachable from its branch (usually ``main``). But new commits
-    from here land on no branch, so the user can't name the timeline or
-    come back to it cleanly.
+    Only removes when we have a concrete tracked listing to compare
+    against. If `.archon/<parent_rel>` isn't tracked at HEAD at all
+    (projects created before archon learned to track .archon/), we
+    leave disk untouched and warn — blindly wiping would destroy the
+    user's in-flight state.
     """
-    sha = inner.head_sha(short=True) or ref
-    log.warn(
-        "You are in DETACHED HEAD state. Any new commits (e.g. from "
-        "archon loop) will not be attached to a named branch and could "
-        "be hard to find later."
-    )
-    log.step("Other branches are untouched — your previous work is still "
-             "reachable from its branch (e.g. main).")
-
-    if not typer.confirm(
-        "Create a new branch at this commit so future commits are preserved?",
-        default=True,
-    ):
-        log.step(
-            "Continuing on detached HEAD. To branch later, run: "
-            f"archon branch <name> {project_path}"
+    removed_total: list[str] = []
+    untracked_parents: list[str] = []
+    for parent_rel, prefix in _STALE_STATE_DIRS:
+        parent = project_path / ".archon" / Path(parent_rel)
+        if not parent.is_dir():
+            continue
+        tree_path = f".archon/{parent_rel}"
+        r = inner._run(
+            ["ls-tree", "--name-only", f"HEAD:{tree_path}"],
+            check=False,
         )
-        return
+        if r.returncode != 0:
+            # Path isn't tracked at HEAD — legacy commit that predates
+            # .archon/ being tracked. Can't distinguish "this dir
+            # belongs to the target state" from "this dir is a leftover
+            # from another branch", so leave everything as-is.
+            untracked_parents.append(tree_path)
+            continue
+        tracked = {
+            line.strip().rstrip("/").split("/")[-1]
+            for line in r.stdout.splitlines()
+            if line.strip()
+        }
+        for entry in sorted(parent.iterdir()):
+            if not entry.is_dir() or not entry.name.startswith(prefix):
+                continue
+            if entry.name in tracked:
+                continue
+            try:
+                shutil.rmtree(entry)
+            except OSError as e:
+                log.warn(f"Could not remove stale {entry}: {e}")
+                continue
+            removed_total.append(f"{parent_rel}/{entry.name}")
 
-    default_name = f"strategy-{sha}" if sha else "strategy-new"
-    raw = typer.prompt("Branch name", default=default_name)
-    safe = _safe_branch_name(raw)
-    if safe != raw:
-        log.info(f"Branch name normalized: {raw!r} → {safe!r}")
-
-    if inner.has_branch(safe):
-        log.error(f"Branch already exists: {safe} — staying detached.")
-        return
-
-    try:
-        inner.create_branch(safe)
-        inner.checkout(safe)
-    except Exception as e:
-        log.error(f"Failed to create/switch to branch {safe}: {e}")
-        return
-
-    log.success(f"Created and switched to branch: {safe}")
+    if removed_total:
+        log.info(
+            f"Removed {len(removed_total)} stale state dir(s) "
+            f"not present at this commit: {', '.join(removed_total)}"
+        )
+    if untracked_parents:
+        log.warn(
+            "This commit predates archon tracking .archon/ state — "
+            "time-travel restores .lean/blueprint files only, not agent "
+            "state. Untracked state dirs: " + ", ".join(untracked_parents)
+        )
+        log.step(
+            "On the next `archon loop`, the updated excludes will commit "
+            "the current .archon/ state so future forks are lossless."
+        )
 
 
 # ── log (small helper, handy for archon users) ────────────────────────

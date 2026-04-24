@@ -81,9 +81,9 @@ Walk the user through the five required sections, one at a time. Do not move on 
    - Which protected declarations would need to change name or signature — the refactor agent **cannot** do this. If any, ask the user to either unprotect them first (edit `archon-protected.yaml` themselves) or drop that part of the refactor.
    - Estimate how many downstream proofs will break into `sorry`.
 
-5. **Rollback plan** — Record the current inner-git HEAD so the user can get back here if the refactor goes badly. Run `git --git-dir=.archon/.git --work-tree=. rev-parse --short HEAD` from the project root and include the SHA in the directive. Mention the command to roll back:
+5. **Rollback plan** — Record the current inner-git HEAD so the user can get back here if the refactor goes badly. Run `git --git-dir=.archon/git-dir --work-tree=. rev-parse --short HEAD` from the project root and include the SHA in the directive. Mention the command to roll back:
    ```
-   archon checkout <branch-or-sha>   # after reviewing the diff
+   archon branch pre-refactor . --from <sha>   # fork a branch at the pre-refactor state
    ```
 
 ## Format of the written file
@@ -113,7 +113,7 @@ Walk the user through the five required sections, one at a time. Do not move on 
 
 ## Rollback
 - Before-refactor inner-git SHA: `<sha>`
-- To revert: `archon checkout <sha-or-branch>`
+- To revert: `archon branch pre-refactor . --from <sha>`
 ```
 
 ## After writing

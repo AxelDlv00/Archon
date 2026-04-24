@@ -200,29 +200,65 @@ export function register(fastify: FastifyInstance, paths: ProjectPaths) {
       commits.push({ sha, shortSha, subject: subject ?? '', date, parents, refs, iteration, phase, fileSlug });
     }
 
-    // Assign a primary branch to each commit from its ref decorations
+    // Assign a primary branch to each commit from its ref decorations.
+    // HEAD-decorated refs claim first so the current branch becomes the
+    // trunk in the UI (ancestors render on HEAD's lane rather than on a
+    // sibling branch's lane).
     const branchAt = new Map<string, string>();
+    const cleanRef = (ref: string) => ref.replace(/^HEAD -> /, '').trim();
+    const isUsableRef = (clean: string) =>
+      !!clean && !clean.startsWith('tag:') && !clean.startsWith('origin/') && clean !== 'HEAD';
     for (const c of commits) {
       for (const ref of c.refs) {
-        // Refs look like: "HEAD -> main", "main", "origin/main", "tag: v1.0"
-        const clean = ref.replace(/^HEAD -> /, '').trim();
-        if (!clean.startsWith('tag:') && !clean.startsWith('origin/') && !branchAt.has(c.sha)) {
-          branchAt.set(c.sha, clean);
-        }
+        if (!ref.startsWith('HEAD -> ')) continue;
+        const clean = cleanRef(ref);
+        if (isUsableRef(clean) && !branchAt.has(c.sha)) branchAt.set(c.sha, clean);
+      }
+    }
+    for (const c of commits) {
+      for (const ref of c.refs) {
+        const clean = cleanRef(ref);
+        if (isUsableRef(clean) && !branchAt.has(c.sha)) branchAt.set(c.sha, clean);
       }
     }
 
-    // Propagate branch from parent to children.
-    // --topo-order without --reverse = newest first, so parents are at higher indices.
-    // Walking from high to low indices processes parents before children.
-    for (let i = commits.length - 1; i >= 0; i--) {
+    // Propagate branch from CHILD to parent — an ancestor sits on the
+    // lane of the descendant that actually reaches it. Without this, a
+    // fork-point commit that happens to be another branch's tip would
+    // incorrectly stamp its label onto the sibling branch's commits.
+    // --topo-order (newest first): children are at lower indices than
+    // their parents, so walking 0..n-1 visits children before parents.
+    const childrenOf = new Map<string, string[]>();
+    const bySha = new Map<string, GitCommit>();
+    for (const c of commits) {
+      bySha.set(c.sha, c);
+      for (const p of c.parents) {
+        const arr = childrenOf.get(p);
+        if (arr) arr.push(c.sha);
+        else childrenOf.set(p, [c.sha]);
+      }
+    }
+    for (let i = 0; i < commits.length; i++) {
       const c = commits[i];
-      if (!branchAt.has(c.sha)) {
-        for (const p of c.parents) {
-          const pb = branchAt.get(p);
-          if (pb) { branchAt.set(c.sha, pb); break; }
+      if (branchAt.has(c.sha)) continue;
+      const kids = childrenOf.get(c.sha) ?? [];
+      // Prefer the child that lists this commit as its FIRST parent (the
+      // "primary" descendant in git's topology).
+      let inherited: string | undefined;
+      for (const childSha of kids) {
+        const child = bySha.get(childSha);
+        if (child && child.parents[0] === c.sha) {
+          const cb = branchAt.get(childSha);
+          if (cb) { inherited = cb; break; }
         }
       }
+      if (!inherited) {
+        for (const childSha of kids) {
+          const cb = branchAt.get(childSha);
+          if (cb) { inherited = cb; break; }
+        }
+      }
+      if (inherited) branchAt.set(c.sha, inherited);
     }
 
     for (const c of commits) c.branch = branchAt.get(c.sha) ?? 'main';

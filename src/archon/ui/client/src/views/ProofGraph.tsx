@@ -459,18 +459,26 @@ function GitTree({
         </g>
       </svg>
 
-      {/* Commit tooltip — rendered OUTSIDE svg to avoid panel clipping */}
+      {/* Commit tooltip — rendered OUTSIDE svg to avoid panel clipping.
+          pointerEvents: 'none' so the tooltip never intercepts clicks on
+          nearby commit nodes underneath it (previously the tooltip lived
+          at y ~= 4 and overlapped lanes 0–2, making those nodes
+          unclickable). The branch-creation command below is purely
+          informational; users can read it and retype, or click the node
+          to select it first and copy from the banner.
+      */}
       {tooltip && (
         <div className={styles.gitTooltip} style={{
           left: Math.min(tooltip.left + 10, containerW - 238),
           top: Math.max(4, tooltip.top - 82),
+          pointerEvents: 'none',
         }}>
           <div className={styles.gitTooltipSha}>{tooltip.commit.shortSha} · {tooltip.commit.branch}</div>
           <div className={styles.gitTooltipMsg}>
             {tooltip.commit.subject.length > 62 ? tooltip.commit.subject.slice(0, 61) + '…' : tooltip.commit.subject}
           </div>
-          <div className={styles.gitTooltipHint}>Run to move project to this state:</div>
-          <div className={styles.gitTooltipCmd}>archon checkout {tooltip.commit.shortSha}</div>
+          <div className={styles.gitTooltipHint}>Fork a new branch here:</div>
+          <div className={styles.gitTooltipCmd}>archon branch at-{tooltip.commit.shortSha} . --from {tooltip.commit.shortSha}</div>
         </div>
       )}
 

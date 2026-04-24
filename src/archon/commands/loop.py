@@ -84,11 +84,7 @@ def _warn_if_inner_dirty(project_path: Path) -> None:
     log.warn(
         "Inner git has uncommitted agent work — leftover from a previous "
         "run or manual edits. This is fine: the loop will pick up whatever "
-        "is on disk."
-    )
-    log.step(
-        f"To wipe it and resume from the last clean commit: "
-        f"archon clean {project_path}"
+        "is on disk, and the next phase commit will capture it."
     )
 
 
@@ -834,8 +830,8 @@ def loop(
     # Warn (but do not block) if the inner git has leftover agent work.
     # The user may have Ctrl-C'd a previous loop mid-phase, or manually
     # edited .lean files between runs. We continue normally — the plan
-    # agent will see whatever is on disk. A separate `archon clean`
-    # command exists for users who want to reset to the last clean commit.
+    # agent will see whatever is on disk and the next phase commit will
+    # capture it.
     _warn_if_inner_dirty(resolved)
 
     # ── Start background services ────────────────────────────────────
@@ -1138,69 +1134,3 @@ def _describe_finalize(do_git: bool, do_lake: bool, do_bp: bool) -> str:
     return ", ".join(parts) if parts else "disabled"
 
 
-# ── archon clean ─────────────────────────────────────────────────────
-
-
-def clean(
-    project_path: str = typer.Argument(".", help="Path to Lean project."),
-    yes: bool = typer.Option(
-        False, "--yes", "-y",
-        help="Skip the confirmation prompt. Dangerous.",
-    ),
-) -> None:
-    """Reset the inner-git working tree to the last clean commit.
-
-    Discards any uncommitted agent work (e.g. leftover from a Ctrl-C'd
-    loop). This rewrites files on disk. The outer (mathematician's) git
-    repo is NOT touched — but be aware: if you have uncommitted
-    mathematician work, we refuse, because the inner reset would clobber
-    it.
-
-    [bold]Examples:[/bold]
-      [cyan]archon clean .[/cyan]
-    """
-    resolved = Path(project_path).resolve()
-    if not (resolved / ".archon").is_dir():
-        log.error(f"Not an Archon project: {resolved}")
-        raise typer.Exit(1)
-    warn_if_mismatch(resolved)
-
-    inner = InnerGit(resolved)
-    if not inner.is_initialized():
-        log.info("Inner git not initialized — nothing to clean.")
-        return
-
-    if not inner.is_dirty():
-        log.info("Inner git is already clean — nothing to do.")
-        return
-
-    outer_git_path = resolved / ".git"
-    if outer_git_path.is_dir():
-        from archon.commands.tooling.git import Git as _OuterGit
-        outer = _OuterGit(resolved, auto_init=False)
-        if outer.is_dirty():
-            log.error(
-                "The outer git repo is dirty. `archon clean` would overwrite "
-                "files you haven't committed. Commit or stash your work first."
-            )
-            raise typer.Exit(1)
-
-    log.warn("This will discard uncommitted agent changes in the inner git:")
-    log.step(f"  HEAD is {inner.head_sha() or '?'} on branch '{inner.current_branch() or '?'}'")
-    log.step("  Files on disk will be rewritten to match.")
-
-    if not yes and not typer.confirm("Continue?", default=False):
-        raise typer.Exit(0)
-
-    try:
-        inner._run(["checkout", "--", "."])
-        # Plain `git clean -fd` leaves hollow iter-NNN/ directories whose
-        # only remaining contents are the excluded .raw.jsonl firehose.
-        # Scrub those too so the dashboard doesn't keep listing phantom
-        # iterations after a clean.
-        inner.clean_untracked(also_ignored_in=[".archon/logs"])
-    except Exception as e:
-        log.error(f"Inner git reset failed: {e}")
-        raise typer.Exit(1)
-
-    log.success("Inner git working tree reset to last clean commit.")

@@ -11,7 +11,7 @@ Key design choices:
   project root (`git add -A` would otherwise fail with
   "does not have a commit checked out").
 - `GIT_WORK_TREE=<project>` — the same files on disk as the outer repo.
-  An `archon checkout` therefore actually rewrites the mathematician's
+  An `archon branch` switch therefore actually rewrites the mathematician's
   working copy, which is the intended behavior: "switch to strategy B"
   means "put strategy B's files on disk".
 - The outer repo's `.gitignore` lists `.archon/`, so the inner git
@@ -111,13 +111,6 @@ class InnerGit:
         r = self._run(["rev-parse", "--abbrev-ref", "HEAD"], check=False)
         return r.stdout.strip() if r.returncode == 0 else None
 
-    def is_detached(self) -> bool:
-        """True if HEAD is detached (not pointing at a branch)."""
-        if not self.is_initialized():
-            return False
-        r = self._run(["symbolic-ref", "-q", "HEAD"], check=False)
-        return r.returncode != 0
-
     def list_branches(self) -> list[str]:
         if not self.is_initialized():
             return []
@@ -198,27 +191,60 @@ class InnerGit:
         self._write_default_excludes()
         return True
 
+    # The inner repo must TRACK .archon/ so `archon branch` (time-travel)
+    # can restore iteration logs, proof-journal sessions, PROGRESS.md,
+    # task_*.md, and Claude's raw session streams at any past commit.
+    #
+    # Tricky part: the outer project's .gitignore usually lists `.archon/`
+    # (to hide agent state from the mathematician's git). `.gitignore`
+    # files are worktree-level — any `GIT_DIR` operating on that worktree
+    # reads them. And their precedence BEATS info/exclude, so we can't
+    # override the outer ignore from here. Instead, `_stage_all` below
+    # force-adds .archon/ children with `git add -f`, which bypasses the
+    # ignore entirely.
+    #
+    # Build artifacts and OS junk stay excluded — they're regenerable
+    # and potentially huge.
+    _DEFAULT_EXCLUDES = (
+        "# Archon inner-repo excludes — managed by InnerGit._write_default_excludes\n"
+        "# .archon/ tracking is handled by _stage_all (git add -f), not here:\n"
+        "# outer .gitignore's `.archon/` rule wins over info/exclude, so any\n"
+        "# `!.archon/` negation at this level would be silently ignored.\n"
+        "# Build artifacts and OS junk.\n"
+        ".lake/\n"
+        "lake-packages/\n"
+        ".DS_Store\n"
+        "*.pyc\n"
+        "__pycache__/\n"
+        ".git/\n"
+    )
+
     def _write_default_excludes(self) -> None:
-        """Write the inner repo's info/exclude so agent junk is skipped."""
+        """Write the inner repo's info/exclude from defaults (idempotent)."""
         info_dir = self.git_dir / "info"
         info_dir.mkdir(parents=True, exist_ok=True)
         exclude_file = info_dir / "exclude"
-        exclude_file.write_text(
-            "# Archon inner-repo excludes — managed by InnerGit._write_default_excludes\n"
-            ".lake/\n"
-            "lake-packages/\n"
-            ".DS_Store\n"
-            "*.pyc\n"
-            "__pycache__/\n"
-            # The outer mathematician's git dir is a separate concern.
-            ".git/\n"
-            # The inner repo's own git dir — defensive, git should auto-skip
-            # but this makes intent explicit.
-            ".archon/git-dir/\n"
-            # The raw log firehose can be huge; skip it.
-            ".archon/logs/**/*.raw.jsonl\n",
-            encoding="utf-8",
-        )
+        exclude_file.write_text(self._DEFAULT_EXCLUDES, encoding="utf-8")
+
+    def ensure_excludes(self) -> bool:
+        """Refresh info/exclude to current defaults on an existing repo.
+
+        Returns True if the file was changed. Used to migrate projects
+        that were initialized under older archon versions (which
+        excluded ``.archon/logs/**/*.raw.jsonl`` from tracking — losing
+        the raw Claude session streams on time-travel).
+        """
+        if not self.is_initialized():
+            return False
+        exclude_file = self.git_dir / "info" / "exclude"
+        try:
+            current = exclude_file.read_text(encoding="utf-8")
+        except OSError:
+            current = ""
+        if current == self._DEFAULT_EXCLUDES:
+            return False
+        self._write_default_excludes()
+        return True
 
     def ensure_initial_commit(self, message: str = "archon: initial state") -> bool:
         """Make the first commit iff the inner repo has none yet.
@@ -228,7 +254,7 @@ class InnerGit:
         """
         if self.has_commits():
             return False
-        self._run(["add", "-A"])
+        self._stage_all()
         r = self._run(["status", "--porcelain"], check=False)
         if not r.stdout.strip():
             self._run(["commit", "--allow-empty", "-q", "-m", message])
@@ -238,16 +264,38 @@ class InnerGit:
 
     # ── actions ───────────────────────────────────────────────────────
 
+    def _stage_all(self) -> None:
+        """Stage the entire working tree, force-tracking .archon/.
+
+        Plain `git add -A` respects the outer project's `.gitignore`,
+        which typically excludes `.archon/` — so the inner repo would
+        commit zero agent state and `archon branch` time-travel would
+        restore nothing but .lean files. To bypass that, we force-add
+        each child of `.archon/` explicitly (except `git-dir`, which is
+        the inner repo itself and must never be committed into itself).
+        This is per-child rather than blanket `git add -f .archon/` so
+        the git-dir exclusion still holds when -f overrides ignores.
+        """
+        self._run(["add", "-A"])
+        archon_dir = self.project_path / ".archon"
+        if not archon_dir.is_dir():
+            return
+        for entry in sorted(archon_dir.iterdir()):
+            if entry.name == "git-dir":
+                continue
+            # -f bypasses outer .gitignore; -A picks up new + modified + deleted.
+            self._run(["add", "-f", "-A", "--", f".archon/{entry.name}"])
+
     def add_all(self) -> None:
         if not self.is_initialized():
             return
-        self._run(["add", "-A"])
+        self._stage_all()
 
     def commit(self, message: str, allow_empty: bool = False) -> bool:
         """Stage everything and commit. Returns True iff a commit was made."""
         if not self.is_initialized():
             return False
-        self._run(["add", "-A"])
+        self._stage_all()
         r = self._run(["status", "--porcelain"], check=False)
         if not r.stdout.strip() and not allow_empty:
             return False
@@ -318,70 +366,6 @@ class InnerGit:
             args.append("-f")
         args.append(safe)
         self._run(args)
-
-    def clean_untracked(
-        self,
-        *,
-        dry_run: bool = False,
-        also_ignored_in: list[str] | None = None,
-    ) -> list[str]:
-        """Remove untracked files and directories in the inner work tree.
-
-        Respects the inner repo's ``info/exclude`` (so ``.lake/``,
-        ``.archon/git-dir/``, ``.git/`` etc. are preserved). Used after
-        ``checkout`` to drop files that were created on later commits and
-        don't exist at the target ref.
-
-        ``also_ignored_in``: subpaths (relative to project root) where
-        *ignored* files should also be removed — scoped ``git clean -fdx``.
-        Needed for paths like ``.archon/logs/`` where an ``iter-NNN/``
-        directory can be left hollow after checkout because its only
-        remaining contents are excluded (e.g. ``*.raw.jsonl``). Without
-        this, those hollow directories stick around and the dashboard
-        still lists them.
-
-        With ``dry_run=True``, returns the list of paths that *would* be
-        removed without touching them.
-        """
-        if not self.is_initialized():
-            return []
-
-        paths: list[str] = []
-
-        flags = "-nd" if dry_run else "-fd"
-        r = self._run(["clean", flags], check=False)
-        if r.returncode == 0:
-            paths.extend(self._parse_clean_output(r.stdout))
-
-        for sub in also_ignored_in or []:
-            sub_path = self.project_path / sub
-            if not sub_path.exists():
-                continue
-            x_flags = "-ndx" if dry_run else "-fdx"
-            r = self._run(["clean", x_flags, "--", sub], check=False)
-            if r.returncode == 0:
-                paths.extend(self._parse_clean_output(r.stdout))
-
-        # Preserve order, drop duplicates (the root clean and the scoped
-        # -x clean can report overlapping paths).
-        seen: set[str] = set()
-        deduped: list[str] = []
-        for p in paths:
-            if p not in seen:
-                seen.add(p)
-                deduped.append(p)
-        return deduped
-
-    @staticmethod
-    def _parse_clean_output(output: str) -> list[str]:
-        paths: list[str] = []
-        for line in output.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("Would remove "):
-                paths.append(stripped[len("Would remove "):].rstrip("/"))
-            elif stripped.startswith("Removing "):
-                paths.append(stripped[len("Removing "):].rstrip("/"))
-        return paths
 
     def has_branch(self, name: str) -> bool:
         return _safe_branch_name(name) in self.list_branches()
