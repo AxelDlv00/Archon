@@ -18,6 +18,12 @@ import typer
 from archon import log
 from archon.commands.tooling.git import Git
 from archon.commands.tooling.inner_git import InnerGit, _safe_branch_name
+
+# Subpaths where ignored files must also be cleaned on checkout. .raw.jsonl
+# lives under .archon/logs/ and is excluded, so a plain `git clean -fd`
+# leaves hollow iter-NNN/ directories behind, which the dashboard then
+# keeps listing as if the iteration still exists.
+_CLEAN_INCLUDE_IGNORED = [".archon/logs"]
 from archon.commands.tooling.version import warn_if_mismatch
 
 
@@ -201,22 +207,36 @@ def checkout(
 
     # Remove files that don't belong to the target commit — stale
     # iteration logs, task_results, and anything else created on later
-    # commits. Without this the dashboard keeps showing "future" runs.
+    # commits. We also scrub ignored files under .archon/logs/ so that
+    # iter-NNN/ directories left hollow (containing only excluded
+    # .raw.jsonl) are truly removed — otherwise the dashboard keeps
+    # listing them.
     if keep_untracked:
-        leftover = inner.clean_untracked(dry_run=True)
+        leftover = inner.clean_untracked(
+            dry_run=True,
+            also_ignored_in=_CLEAN_INCLUDE_IGNORED,
+        )
         if leftover:
             log.info(
                 f"Kept {len(leftover)} untracked path(s) from later commits "
                 f"(--keep-untracked). The dashboard may still show them:"
             )
             _log_path_preview(leftover)
-        return
+    else:
+        removed = inner.clean_untracked(
+            dry_run=False,
+            also_ignored_in=_CLEAN_INCLUDE_IGNORED,
+        )
+        if removed:
+            log.info(f"Removed {len(removed)} untracked path(s) not present at {ref}:")
+            _log_path_preview(removed)
 
-    removed = inner.clean_untracked(dry_run=False)
-    if not removed:
-        return
-    log.info(f"Removed {len(removed)} untracked path(s) not present at {ref}:")
-    _log_path_preview(removed)
+    # Detached-HEAD handling: if the user checked out a bare SHA, any
+    # future inner commits (e.g. from `archon loop`) land on an unnamed
+    # ref that branches can't see. Offer to create a branch so the new
+    # timeline is preserved and the dashboard's graph shows it.
+    if inner.is_detached():
+        _handle_detached_head(inner, ref, project_path)
 
 
 def _log_path_preview(paths: list[str], limit: int = 10) -> None:
@@ -224,6 +244,53 @@ def _log_path_preview(paths: list[str], limit: int = 10) -> None:
         log.step(f"  {p}")
     if len(paths) > limit:
         log.step(f"  ... ({len(paths) - limit} more)")
+
+
+def _handle_detached_head(inner: InnerGit, ref: str, project_path: str) -> None:
+    """Warn about detached HEAD after checkout and offer to create a branch.
+
+    Existing branches are unchanged — the commit the user checked out FROM
+    is still reachable from its branch (usually ``main``). But new commits
+    from here land on no branch, so the user can't name the timeline or
+    come back to it cleanly.
+    """
+    sha = inner.head_sha(short=True) or ref
+    log.warn(
+        "You are in DETACHED HEAD state. Any new commits (e.g. from "
+        "archon loop) will not be attached to a named branch and could "
+        "be hard to find later."
+    )
+    log.step("Other branches are untouched — your previous work is still "
+             "reachable from its branch (e.g. main).")
+
+    if not typer.confirm(
+        "Create a new branch at this commit so future commits are preserved?",
+        default=True,
+    ):
+        log.step(
+            "Continuing on detached HEAD. To branch later, run: "
+            f"archon branch <name> {project_path}"
+        )
+        return
+
+    default_name = f"strategy-{sha}" if sha else "strategy-new"
+    raw = typer.prompt("Branch name", default=default_name)
+    safe = _safe_branch_name(raw)
+    if safe != raw:
+        log.info(f"Branch name normalized: {raw!r} → {safe!r}")
+
+    if inner.has_branch(safe):
+        log.error(f"Branch already exists: {safe} — staying detached.")
+        return
+
+    try:
+        inner.create_branch(safe)
+        inner.checkout(safe)
+    except Exception as e:
+        log.error(f"Failed to create/switch to branch {safe}: {e}")
+        return
+
+    log.success(f"Created and switched to branch: {safe}")
 
 
 # ── log (small helper, handy for archon users) ────────────────────────

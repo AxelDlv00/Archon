@@ -1194,7 +1194,11 @@ def clean(
 
     try:
         inner._run(["checkout", "--", "."])
-        inner._run(["clean", "-fd"])
+        # Plain `git clean -fd` leaves hollow iter-NNN/ directories whose
+        # only remaining contents are the excluded .raw.jsonl firehose.
+        # Scrub those too so the dashboard doesn't keep listing phantom
+        # iterations after a clean.
+        inner.clean_untracked(also_ignored_in=[".archon/logs"])
     except Exception as e:
         log.error(f"Inner git reset failed: {e}")
         raise typer.Exit(1)

@@ -111,6 +111,13 @@ class InnerGit:
         r = self._run(["rev-parse", "--abbrev-ref", "HEAD"], check=False)
         return r.stdout.strip() if r.returncode == 0 else None
 
+    def is_detached(self) -> bool:
+        """True if HEAD is detached (not pointing at a branch)."""
+        if not self.is_initialized():
+            return False
+        r = self._run(["symbolic-ref", "-q", "HEAD"], check=False)
+        return r.returncode != 0
+
     def list_branches(self) -> list[str]:
         if not self.is_initialized():
             return []
@@ -312,7 +319,12 @@ class InnerGit:
         args.append(safe)
         self._run(args)
 
-    def clean_untracked(self, *, dry_run: bool = False) -> list[str]:
+    def clean_untracked(
+        self,
+        *,
+        dry_run: bool = False,
+        also_ignored_in: list[str] | None = None,
+    ) -> list[str]:
         """Remove untracked files and directories in the inner work tree.
 
         Respects the inner repo's ``info/exclude`` (so ``.lake/``,
@@ -320,19 +332,50 @@ class InnerGit:
         ``checkout`` to drop files that were created on later commits and
         don't exist at the target ref.
 
+        ``also_ignored_in``: subpaths (relative to project root) where
+        *ignored* files should also be removed — scoped ``git clean -fdx``.
+        Needed for paths like ``.archon/logs/`` where an ``iter-NNN/``
+        directory can be left hollow after checkout because its only
+        remaining contents are excluded (e.g. ``*.raw.jsonl``). Without
+        this, those hollow directories stick around and the dashboard
+        still lists them.
+
         With ``dry_run=True``, returns the list of paths that *would* be
         removed without touching them.
         """
         if not self.is_initialized():
             return []
+
+        paths: list[str] = []
+
         flags = "-nd" if dry_run else "-fd"
         r = self._run(["clean", flags], check=False)
-        if r.returncode != 0:
-            return []
+        if r.returncode == 0:
+            paths.extend(self._parse_clean_output(r.stdout))
+
+        for sub in also_ignored_in or []:
+            sub_path = self.project_path / sub
+            if not sub_path.exists():
+                continue
+            x_flags = "-ndx" if dry_run else "-fdx"
+            r = self._run(["clean", x_flags, "--", sub], check=False)
+            if r.returncode == 0:
+                paths.extend(self._parse_clean_output(r.stdout))
+
+        # Preserve order, drop duplicates (the root clean and the scoped
+        # -x clean can report overlapping paths).
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for p in paths:
+            if p not in seen:
+                seen.add(p)
+                deduped.append(p)
+        return deduped
+
+    @staticmethod
+    def _parse_clean_output(output: str) -> list[str]:
         paths: list[str] = []
-        for line in r.stdout.splitlines():
-            # git clean lines look like "Would remove path/" (dry-run) or
-            # "Removing path/" (real run).
+        for line in output.splitlines():
             stripped = line.strip()
             if stripped.startswith("Would remove "):
                 paths.append(stripped[len("Would remove "):].rstrip("/"))
