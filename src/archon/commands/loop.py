@@ -88,7 +88,7 @@ def _warn_if_inner_dirty(project_path: Path) -> None:
     )
     log.step(
         f"To wipe it and resume from the last clean commit: "
-        f"archon loop clean {project_path}"
+        f"archon clean {project_path}"
     )
 
 
@@ -834,7 +834,7 @@ def loop(
     # Warn (but do not block) if the inner git has leftover agent work.
     # The user may have Ctrl-C'd a previous loop mid-phase, or manually
     # edited .lean files between runs. We continue normally — the plan
-    # agent will see whatever is on disk. A separate `archon loop clean`
+    # agent will see whatever is on disk. A separate `archon clean`
     # command exists for users who want to reset to the last clean commit.
     _warn_if_inner_dirty(resolved)
 

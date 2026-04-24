@@ -36,12 +36,13 @@ def _resolve_project(project_path: str) -> tuple[Path, InnerGit]:
     return resolved, inner
 
 
-def _refuse_if_outer_dirty(project_path: Path) -> None:
+def _refuse_if_outer_dirty(project_path: Path, force_hint: str | None = None) -> None:
     """Refuse with a clear error if the outer (mathematician's) tree is dirty.
 
     `archon checkout` replaces files on disk — if the mathematician has
     uncommitted work, that work is at risk. Block the operation until
-    they commit or stash.
+    they commit or stash. If the caller supports a bypass, pass
+    ``force_hint`` to surface it in the error message.
     """
     outer = Git(project_path, auto_init=False)
     if not outer.is_repo():
@@ -55,6 +56,10 @@ def _refuse_if_outer_dirty(project_path: Path) -> None:
         log.step("  git add -A && git commit -m '<message>'")
         log.step("  # or:")
         log.step("  git stash")
+        if force_hint:
+            log.step("")
+            log.step("Or bypass this check and overwrite your uncommitted work:")
+            log.step(f"  {force_hint}")
         raise typer.Exit(1)
 
 
@@ -134,18 +139,23 @@ def checkout(
 
     This rewrites `.lean` / blueprint files on disk to match the target.
     If your outer (mathematician's) git repo has uncommitted changes, the
-    operation is refused by default — commit or stash first.
+    operation is refused by default — commit or stash first, or pass
+    [cyan]--force[/cyan] to overwrite them.
 
     [bold]Examples:[/bold]
       [cyan]archon checkout main .[/cyan]
       [cyan]archon checkout bolzano-weierstrass .[/cyan]
       [cyan]archon checkout abc1234 .[/cyan]
+      [cyan]archon checkout abc1234 . --force[/cyan]   (discard uncommitted outer changes)
     """
     resolved, inner = _resolve_project(project_path)
     warn_if_mismatch(resolved)
 
     if not force:
-        _refuse_if_outer_dirty(resolved)
+        _refuse_if_outer_dirty(
+            resolved,
+            force_hint=f"archon checkout {ref} {project_path} --force",
+        )
 
     # Warn (but do not block) if the inner repo is dirty — the user may
     # be mid-iteration and have unfinished agent work. Dropping it would
@@ -159,7 +169,7 @@ def checkout(
         log.step("To commit current agent state first:")
         log.step(f"  git --git-dir={resolved}/.archon/.git --work-tree={resolved} commit -am 'archon: checkpoint'")
         log.step("To discard current agent state instead:")
-        log.step(f"  archon loop clean {project_path}")
+        log.step(f"  archon clean {project_path}")
         log.step("")
         if not typer.confirm("Continue with checkout anyway?", default=False):
             raise typer.Exit(0)
