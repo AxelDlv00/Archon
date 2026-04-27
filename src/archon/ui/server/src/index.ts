@@ -91,5 +91,26 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   // Prefer 127.0.0.1 in the printed URL — resolves predictably on every system,
   // whereas `localhost` may hit ::1 first on configurations with IPv6-first DNS.
   console.log(`Archon UI → http://127.0.0.1:${port}  (project: ${projectPath})`);
-  createServer({ projectPath, port }).catch(err => { console.error(err); process.exit(1); });
+  createServer({ projectPath, port })
+    .then(fastify => {
+      // Graceful shutdown: when the parent (`archon dashboard`) sends SIGTERM
+      // or the user Ctrl+Cs, close fastify so the listening socket is fully
+      // released before we exit. Without this, a quick re-launch of the
+      // dashboard could see EADDRINUSE on the same port.
+      let shuttingDown = false;
+      const shutdown = async (sig: string) => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        console.log(`\n[archon-ui] Received ${sig}, closing server…`);
+        try {
+          await fastify.close();
+        } catch (err) {
+          console.error('[archon-ui] Error during shutdown:', err);
+        }
+        process.exit(0);
+      };
+      process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
+      process.on('SIGINT', () => { void shutdown('SIGINT'); });
+    })
+    .catch(err => { console.error(err); process.exit(1); });
 }

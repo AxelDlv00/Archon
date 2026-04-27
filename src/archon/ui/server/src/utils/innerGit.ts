@@ -109,12 +109,29 @@ export function mapIterToPhaseCommits(
   return out;
 }
 
-/** List all .lean files in the tree at a given commit. */
+/**
+ * List all project .lean files in the tree at a given commit.
+ *
+ * Filters out tooling/agent dirs that the inner git tracks but that aren't
+ * project source — most importantly `.archon/logs/iter-NNN/snapshots/<slug>/`
+ * which contains baseline.lean and step-*.lean snapshot files. Including
+ * them would make the proof graph render every snapshot as a separate file
+ * group (e.g. "baseline.lean" repeated once per iteration × prover slug).
+ *
+ * The exclusion list matches the on-disk walk in proofgraph.ts's
+ * `/api/proofgraph/declarations` so both views agree on what counts as a
+ * project file.
+ */
+const EXCLUDED_PATH_SEGMENTS = new Set(['_lake', '.lake', '.archon', 'node_modules', '.git', 'lake-packages']);
+
 export function lsLeanFilesAtCommit(gitDir: string, projectPath: string, sha: string): string[] {
   if (!hasInnerGit(gitDir)) return [];
   const { stdout, ok } = run(gitDir, projectPath, ['ls-tree', '-r', '--name-only', sha]);
   if (!ok) return [];
-  return stdout.split('\n').filter(f => f.endsWith('.lean'));
+  return stdout.split('\n').filter(f => {
+    if (!f.endsWith('.lean')) return false;
+    return !f.split('/').some(seg => EXCLUDED_PATH_SEGMENTS.has(seg));
+  });
 }
 
 /**

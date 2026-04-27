@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import errno
 import hashlib
 import os
 import platform
@@ -34,22 +35,50 @@ def _has(binary: str) -> bool:
 
 
 def _port_in_use(port: int) -> bool:
-    """Return True if ANY local stack (IPv4 or IPv6 loopback) is listening.
+    """Return True if the dashboard server can NOT bind to ``port``.
 
-    We must check both — a previous Node server that bound to `::` leaves the
-    port held on both stacks, and a browser resolving `localhost` to `::1`
-    can hit a zombie listener we'd otherwise miss if we only probed v4.
+    The check mirrors the server's bind sequence in ``server/src/index.ts``:
+    try IPv6 dual-stack ``::`` first, fall back to IPv4 ``0.0.0.0`` only on
+    EAFNOSUPPORT/EADDRNOTAVAIL. SO_REUSEADDR matches libuv's defaults so we
+    predict what the Node bind will actually see.
+
+    A bind-test is the only reliable check for "is this port usable by the
+    server". Connect-based probes (the previous implementation) gave false
+    "free" results for ports bound to a specific interface or stuck in
+    TIME_WAIT without SO_REUSEADDR, and they could block for the full
+    socket timeout per attempt on filtered ports — turning ``_find_free_port``
+    into a multi-second stall. ``bind`` returns immediately in every case.
     """
-    for family, addr in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+    # IPv6 dual-stack — what the server tries first.
+    try:
+        s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
         try:
-            with socket.socket(family, socket.SOCK_STREAM) as s:
-                s.settimeout(0.5)
-                if s.connect_ex((addr, port)) == 0:
-                    return True
-        except OSError:
-            # Family not supported on this host (e.g., IPv6 disabled) — skip.
-            continue
-    return False
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+            except OSError:
+                pass  # platform may not allow toggling V6ONLY at runtime
+            s.bind(("::", port))
+            return False  # bound successfully — port is free
+        finally:
+            s.close()
+    except OSError as e:
+        # IPv6 disabled on this host — fall through to v4-only test, same
+        # fallback path the server uses. Any other error (EADDRINUSE,
+        # EACCES, …) means the server can't bind here either.
+        if e.errno not in (errno.EAFNOSUPPORT, errno.EADDRNOTAVAIL, errno.EPROTONOSUPPORT):
+            return True
+
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("0.0.0.0", port))
+            return False
+        finally:
+            s.close()
+    except OSError:
+        return True
 
 
 def _wait_for_http(port: int, timeout: float = 4.0) -> bool:
@@ -86,8 +115,81 @@ def _project_key(project_path: str) -> str:
     return hashlib.sha256(project_path.encode()).hexdigest()[:16]
 
 
+def _is_archon_ui_pid(pid: int) -> bool:
+    """Best-effort: confirm ``pid`` is actually an archon UI server.
+
+    Guards against killing an unrelated process when the OS has reused the
+    PID of a previous dashboard. Falls back to True (proceed with the kill)
+    if we can't introspect the process — better to be slightly aggressive
+    on platforms without /proc than to leave a stale server running.
+    """
+    proc_cmdline = Path(f"/proc/{pid}/cmdline")
+    if proc_cmdline.exists():
+        try:
+            cmd = proc_cmdline.read_text(errors="replace").lower()
+        except OSError:
+            return True
+        return any(tok in cmd for tok in ("tsx", "src/index.ts", "archon-ui"))
+    # Non-Linux: try `ps`. If that fails too, don't block the kill.
+    try:
+        r = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            capture_output=True, text=True, timeout=2,
+        )
+        if r.returncode != 0:
+            return False  # process doesn't exist
+        cmd = r.stdout.strip().lower()
+        return any(tok in cmd for tok in ("tsx", "src/index.ts", "archon-ui", "node"))
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+
+
+def _signal_pid_or_group(pid: int, sig: int) -> None:
+    """Send ``sig`` to the entire process group of ``pid``, falling back to
+    the single PID if it isn't a session leader.
+
+    Servers spawned with ``start_new_session=True`` are session leaders, so
+    ``getpgid(pid) == pid`` and ``killpg`` reaches every child the server
+    forked. Without process-group signalling, terminating the parent leaves
+    grandchildren running and can hold the port open.
+    """
+    try:
+        pgid = os.getpgid(pid)
+    except OSError:
+        pgid = pid
+    try:
+        os.killpg(pgid, sig)
+    except OSError:
+        try:
+            os.kill(pid, sig)
+        except OSError:
+            pass
+
+
+def _wait_for_exit(pid: int, timeout: float, interval: float = 0.1) -> bool:
+    """Poll until ``pid`` no longer exists or ``timeout`` elapses."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return True
+        time.sleep(interval)
+    try:
+        os.kill(pid, 0)
+        return False
+    except OSError:
+        return True
+
+
 def _kill_old_server(pid_file: Path) -> None:
-    """Stop a previously running dashboard server for this project."""
+    """Stop a previously running dashboard server for this project.
+
+    Sends SIGTERM to the server's process group (so any sub-children die
+    too), waits up to 5s for graceful Fastify shutdown, then escalates to
+    SIGKILL. Bails out early if the recorded PID has been reused by an
+    unrelated process.
+    """
     if not pid_file.exists():
         return
     try:
@@ -103,31 +205,18 @@ def _kill_old_server(pid_file: Path) -> None:
         pid_file.unlink(missing_ok=True)
         return
 
-    log.step(f"Stopping previous UI server for this project (PID {old_pid})...")
-    try:
-        os.kill(old_pid, signal.SIGTERM)
-    except OSError:
-        pass
+    if not _is_archon_ui_pid(old_pid):
+        log.warn(f"PID {old_pid} no longer looks like an archon UI server — leaving it alone")
+        pid_file.unlink(missing_ok=True)
+        return
 
-    for _ in range(5):
-        try:
-            os.kill(old_pid, 0)
-            time.sleep(1)
-        except OSError:
-            break
-    else:
-        # Still alive after 5s — force kill
+    log.step(f"Stopping previous UI server for this project (PID {old_pid})...")
+    _signal_pid_or_group(old_pid, signal.SIGTERM)
+
+    if not _wait_for_exit(old_pid, timeout=5.0):
         log.warn(f"PID {old_pid} did not exit after SIGTERM, forcing stop...")
-        try:
-            os.kill(old_pid, signal.SIGKILL)
-        except OSError:
-            pass
-        for _ in range(3):
-            try:
-                os.kill(old_pid, 0)
-                time.sleep(1)
-            except OSError:
-                break
+        _signal_pid_or_group(old_pid, signal.SIGKILL)
+        _wait_for_exit(old_pid, timeout=3.0)
 
     pid_file.unlink(missing_ok=True)
 
@@ -302,6 +391,16 @@ def dashboard(
         "src/index.ts", "--project", str(resolved), "--port", str(port),
     ]
 
+    # Spawning kwargs shared by dev and production modes. ``start_new_session``
+    # places the Node server in its own process group so we can kill the whole
+    # tree on shutdown — terminating just the parent PID would leave any
+    # children (rare, but possible during npm install fallbacks) holding the
+    # listening socket. Windows has no equivalent here; archon's CLI is Unix-
+    # only in practice (dashboard.py is invoked by `archon` shell entrypoint).
+    spawn_kwargs: dict = {"cwd": server_dir}
+    if platform.system() != "Windows":
+        spawn_kwargs["start_new_session"] = True
+
     if dev:
         log.header("Dev Mode")
         log.key_value({
@@ -310,11 +409,19 @@ def dashboard(
         })
         log.info("Press Ctrl+C to stop\n")
 
-        server_proc = subprocess.Popen(server_cmd, cwd=server_dir)
+        server_proc = subprocess.Popen(server_cmd, **spawn_kwargs)
         pid_file.write_text(str(server_proc.pid))
 
+        cleanup_done = {"done": False}
         def _cleanup_dev():
-            server_proc.terminate()
+            if cleanup_done["done"]:
+                return
+            cleanup_done["done"] = True
+            if server_proc.poll() is None:
+                _signal_pid_or_group(server_proc.pid, signal.SIGTERM)
+                if not _wait_for_exit(server_proc.pid, timeout=5.0):
+                    _signal_pid_or_group(server_proc.pid, signal.SIGKILL)
+                    _wait_for_exit(server_proc.pid, timeout=2.0)
             pid_file.unlink(missing_ok=True)
         atexit.register(_cleanup_dev)
 
@@ -339,14 +446,28 @@ def dashboard(
             "node", "--import", "tsx",
             "src/index.ts", "--project", str(resolved), "--port", str(p),
         ]
-        return subprocess.Popen(cmd, cwd=server_dir)
+        return subprocess.Popen(cmd, **spawn_kwargs)
+
+    def _shutdown_proc(proc: subprocess.Popen, term_timeout: float = 5.0) -> None:
+        """Bring down a server process group cleanly: SIGTERM, wait, SIGKILL."""
+        if proc.poll() is not None:
+            return
+        _signal_pid_or_group(proc.pid, signal.SIGTERM)
+        if not _wait_for_exit(proc.pid, timeout=term_timeout):
+            _signal_pid_or_group(proc.pid, signal.SIGKILL)
+            _wait_for_exit(proc.pid, timeout=2.0)
 
     MAX_ATTEMPTS = 8
     server_proc = _spawn(port)
     pid_file.write_text(str(server_proc.pid))
 
     for attempt in range(MAX_ATTEMPTS):
-        if _wait_for_http(port, timeout=4.0):
+        # Cold starts (tsx loader + module resolution + first build cache miss)
+        # can take well over 4s on slow filesystems. Give the first attempt
+        # extra headroom so we don't kill a healthy-but-slow server and churn
+        # through ports for no reason.
+        wait_timeout = 12.0 if attempt == 0 else 4.0
+        if _wait_for_http(port, timeout=wait_timeout):
             break  # our server is live and answering
         # Either it died on bind (race with another dashboard) or it
         # didn't come up in time. Kill cleanly and advance to a fresh port.
@@ -354,12 +475,8 @@ def dashboard(
         if died:
             log.warn(f"Port {port} was taken (likely by a parallel dashboard). Trying the next port…")
         else:
-            log.warn(f"Server on port {port} did not respond within 4s. Restarting on the next port…")
-            server_proc.terminate()
-            try:
-                server_proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                server_proc.kill()
+            log.warn(f"Server on port {port} did not respond within {wait_timeout:g}s. Restarting on the next port…")
+            _shutdown_proc(server_proc, term_timeout=2.0)
 
         next_port = _find_free_port(port)
         if next_port is None:
@@ -371,10 +488,7 @@ def dashboard(
         pid_file.write_text(str(server_proc.pid))
     else:
         log.error(f"Server did not start after {MAX_ATTEMPTS} port attempts")
-        try:
-            server_proc.terminate()
-        except Exception:
-            pass
+        _shutdown_proc(server_proc, term_timeout=2.0)
         pid_file.unlink(missing_ok=True)
         raise typer.Exit(1)
 
@@ -397,13 +511,32 @@ def dashboard(
     if open_browser:
         _open_browser(base_url)
 
-    # Wait for server (Ctrl+C to stop)
+    # Wait for server (Ctrl+C to stop). Cleanup must be idempotent because
+    # both atexit and the KeyboardInterrupt branch below call it, and a
+    # double-kill of an already-dead PID would otherwise emit harmless but
+    # confusing OSErrors.
+    cleanup_done = {"done": False}
     def _cleanup_prod():
-        server_proc.terminate()
+        if cleanup_done["done"]:
+            return
+        cleanup_done["done"] = True
+        _shutdown_proc(server_proc, term_timeout=5.0)
         pid_file.unlink(missing_ok=True)
         log.info("Dashboard stopped")
 
     atexit.register(_cleanup_prod)
+
+    # Forward SIGTERM (e.g., from `kill <python-pid>` or a parent shell that's
+    # exiting) to the server's process group before we exit, so the listening
+    # port is released cleanly even when we aren't dying via Ctrl+C.
+    def _on_term(signum, frame):
+        _cleanup_prod()
+        # Re-raise default behaviour: exit with a conventional 128 + signum.
+        raise SystemExit(128 + signum)
+    try:
+        signal.signal(signal.SIGTERM, _on_term)
+    except (ValueError, OSError):
+        pass  # not on the main thread, or platform doesn't support it
 
     try:
         server_proc.wait()
