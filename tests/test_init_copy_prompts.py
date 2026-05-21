@@ -77,12 +77,45 @@ class CopyPromptsSymlinkRegressionTest(unittest.TestCase):
                 "non-fresh path must preserve a user-edited real file",
             )
 
+    def test_overwrite_path_replaces_user_edited_file(self):
+        # The "overwrite" reinit mode keeps ctx.fresh=True. A user who
+        # edited a prompt and then re-ran ``archon init`` with
+        # ``overwrite`` (or ``--force``) MUST see their edits replaced
+        # by the bundled version — that's the whole semantic of the
+        # menu line. A regression here would silently preserve user
+        # edits instead.
+        for f in sorted(self.prompts_src.glob("*.md"))[:1]:
+            dst = self.project / ".archon" / "prompts" / f.name
+            dst.unlink()  # drop the legacy symlink
+            dst.write_text("STALE USER EDITS\n", encoding="utf-8")
+        CopyPromptsStep(self._ctx(fresh=True)).run()
+        for f in sorted(self.prompts_src.glob("*.md"))[:1]:
+            dst = self.project / ".archon" / "prompts" / f.name
+            self.assertEqual(
+                dst.read_bytes(),
+                f.read_bytes(),
+                "overwrite (fresh=True) must replace user-edited prompts "
+                "with the bundled version",
+            )
+
 
 class InitCommandFreshFlagTest(unittest.TestCase):
-    """``InitCommand`` must demote ``ctx.fresh`` to False for any reinit
-    mode (overwrite / merge / keep). The bug was that overwrite kept
-    ctx.fresh = True, sending CopyPromptsStep down the symlink-blind
-    path.
+    """``ctx.fresh`` controls whether CopyPromptsStep / StateDirStep
+    blast over the user's existing prompts (True = overwrite) or
+    preserve what's on disk (False).
+
+    The reinit modes map as follows:
+
+      * fresh     → True  (no existing files, just copy)
+      * overwrite → True  (explicit "replace my edits with bundled")
+      * merge     → False (PromptMerger already reconciled with Claude's
+                           help; further writes would clobber the result)
+      * keep      → returns before any consumer reads ctx.fresh, so the
+                    value doesn't reach CopyPromptsStep
+
+    A previous fix incorrectly demoted ``ctx.fresh`` for the overwrite
+    path too, which made overwrite preserve user edits — the opposite
+    of its advertised behavior. This test pins the correct semantics.
     """
 
     def _patches(self, mode: str):
@@ -118,16 +151,15 @@ class InitCommandFreshFlagTest(unittest.TestCase):
         cmd.run()
         return cmd.ctx
 
-    def test_overwrite_mode_sets_fresh_false(self):
+    def test_overwrite_mode_keeps_fresh_true(self):
+        # Regression: a prior fix set ctx.fresh=False here, which made
+        # CopyPromptsStep preserve user edits instead of overwriting
+        # them — defeating the whole point of "overwrite".
         ctx = self._run_init("overwrite")
-        self.assertFalse(ctx.fresh)
+        self.assertTrue(ctx.fresh)
 
     def test_merge_mode_sets_fresh_false(self):
         ctx = self._run_init("merge")
-        self.assertFalse(ctx.fresh)
-
-    def test_keep_mode_sets_fresh_false(self):
-        ctx = self._run_init("keep")
         self.assertFalse(ctx.fresh)
 
     def test_fresh_mode_stays_fresh_true(self):

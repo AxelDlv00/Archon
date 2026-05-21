@@ -84,22 +84,26 @@ class InitCommand:
             log.info("Aborted by user — no changes made.")
             raise typer.Exit(0)
 
-        # Anything other than a clean "fresh" init means there's already a
-        # .archon/ on disk (possibly with legacy symlinks). The non-fresh
-        # branch in CopyPromptsStep handles symlinks correctly by unlinking
-        # before copy; the fresh branch follows them and crashes with
-        # SameFileError. Pin ctx.fresh to False for keep/merge/overwrite so
-        # everyone takes the symlink-aware path.
-        if mode != "fresh":
-            self.ctx.fresh = False
-
         if mode == "keep":
+            # keep returns before _run_full_init, so ctx.fresh's value
+            # never reaches CopyPromptsStep / StateDirStep here.
             self._run_keep_only()
             return
 
         if mode == "merge":
+            # PromptMerger reconciles bundled vs. local with Claude's
+            # help BEFORE the rest of init runs. By the time
+            # CopyPromptsStep / StateDirStep see the prompts, they
+            # already reflect the user's intent — preserve them.
             PromptMerger(resolved, state_dir, model=self.model).run()
+            self.ctx.fresh = False
 
+        # `overwrite` (including --force) keeps ctx.fresh=True so the
+        # bundled prompts replace the user's edits — that's the
+        # explicit semantic of the menu line. The SameFileError on
+        # legacy symlinks that previously broke this path is fixed at
+        # the consumer site (CopyPromptsStep now unlinks symlinks
+        # before copy_file regardless of ctx.fresh).
         self._run_full_init()
 
     # ── private ────────────────────────────────────────────────────────
